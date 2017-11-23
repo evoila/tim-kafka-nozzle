@@ -1,7 +1,7 @@
 # autoscaler-nozzle 
 
 
-This project is a fork from [kafka-firehose-nozzle](https://github.com/rakutentech/kafka-firehose-nozzle) and changes the output from JSON to protobuf.
+This project is a fork from [kafka-firehose-nozzle](https://github.com/rakutentech/kafka-firehose-nozzle) and changes the output from JSON to protobuf. It is part of the [osb-autoscaler-framework](https://github.com/evoila/osb-autoscaler-core).
 
 Unlike the nozzle from rakutentech this nozzle publishes `ContainerMetric` and `HttpStartStop` events to two seperate topics for all applications.
 
