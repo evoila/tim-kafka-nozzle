@@ -1,4 +1,4 @@
-# autoscaler-nozzle 
+# osb-autoscaler-kafka-nozzle 
 
 
 This project is a fork from [kafka-firehose-nozzle](https://github.com/rakutentech/kafka-firehose-nozzle) and changes the output from JSON to protobuf. It is part of the [osb-autoscaler-framework](https://github.com/evoila/osb-autoscaler-core).
