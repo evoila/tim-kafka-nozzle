@@ -7,6 +7,8 @@ Unlike the nozzle from rakutentech this nozzle publishes `ContainerMetric` and `
 
 *NOTE*: Currently kafka topics are hardcoded into the kafka.go file in the method `input(event *events.Envelope)`.
 
+*NOTE*: For debugging purposes the nozzle is additionaly publishing the container metrics on the topic `containerMetricAsJSON`as a JSON string.
+
 `autoscaler-nozzle ` is written by Golang and built with [rakutentech/go-nozzle](https://github.com/rakutentech/go-nozzle) package. 
 
 
@@ -21,7 +23,7 @@ $ autoscaler-nozzle [options]
 The following are available options,
 
 ```bash
--config PATH       Path to configuraiton file
+-config PATH       Path to configuration file
 -username NAME     username to grant access token to connect firehose
 -password PASS     password to grant access token to connect firehose
 -worker NUM        Number of producer worker. Default is number of CPU core
@@ -34,17 +36,8 @@ You can set `password` via `UAA_PASSWORD` environmental variable.
 
 ## Configuration
 
-You can configure it via `.toml` file. You can see the example and description of this configuration file in [example](/example) directory. 
+You can configure it via `.toml` file. You can see the example and description of this configuration file in [example](/example) directory. The default name for the configuration file is `kafka-firehose-nozzle.toml`.
 
 ## Install
 
 You can deploy this as Cloud Foundry application with [go-buildpack](https://github.com/cloudfoundry/go-buildpack). 
-
-## Contribution
-
-1. Fork ([https://github.com/rakutentech/kafka-firehose-nozzle/fork](https://github.com/rakutentech/kafka-firehose-nozzle/fork))
-1. Create a feature branch
-1. Commit your changes
-1. Rebase your local changes against the master branch
-1. Run test suite with the `make test-all` command and confirm that it passes
-1. Create a new Pull Request
