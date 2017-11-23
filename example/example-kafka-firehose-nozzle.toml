@@ -1,0 +1,45 @@
+# This is example toml file to configure 'firehose-kafka-nozzle'.
+# You can edit this file for your environment.
+
+# All data will be distributed to nozzle with same subscription ID.
+# https://github.com/cloudfoundry/loggregator#consuming-log-and-metric-data
+subscription_id = "example-kafka-firehose-nozzle"
+
+[cf]
+# Endpoint where nozzle consumes logs
+doppler_address = "wss://doppler..."
+
+# To access to the firehoze and consume logs from there,
+# you need an access token for that.
+# 
+# You can just set it at `token` property in this file.
+# Or you can provide uaa endpoint and username/password.
+# It automatically grants token before connecting.
+
+# Endpoint where nozzle fetches the access token
+# to read the firehose messages. 
+uaa_address = "https://uaa..."
+
+# username & password to fetch the firehose access token
+username = "example-user"
+password = "example-password"
+
+# token for subscribing data from firehose
+# token = "np9q8b4qp3;vqo...."
+
+[kafka]
+# The list of kafka brokers IP
+brokers = ["127.0.0.1","192.168.1.1:9092","192.168.1.2:9092","192.168.1.3:9092"]
+
+# The producer retry logic
+retry_max = 10
+retry_backoff_ms = 500
+
+
+  # Topic kafka topic rule
+  # Each events are sent to the each topic on kafka
+  [kafka.topic]
+  log_message = "log"
+  #log_message_fmt = "log-%s"
+  log_message_fmt = "log-%s"
+  value_metric = "platformMetric"
