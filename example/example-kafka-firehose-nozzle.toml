@@ -1,5 +1,7 @@
 # This is example toml file to configure 'firehose-kafka-nozzle'.
-# You can edit this file for your environment.
+# You can edit this file for your environment, but do not forget 
+# to change its name to the default configuration file name or
+# give the path of the file as a parameter as described in the README.
 
 # All data will be distributed to nozzle with same subscription ID.
 # https://github.com/cloudfoundry/loggregator#consuming-log-and-metric-data
