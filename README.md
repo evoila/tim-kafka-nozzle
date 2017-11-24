@@ -9,7 +9,7 @@ Unlike the nozzle from rakutentech this nozzle publishes `ContainerMetric` and `
 
 *NOTE*: For debugging purposes the nozzle is additionaly publishing the container metrics on the topic `containerMetricAsJSON`as a JSON string.
 
-`autoscaler-nozzle ` is written by Golang and built with [rakutentech/go-nozzle](https://github.com/rakutentech/go-nozzle) package. 
+`autoscaler-nozzle ` is written in go and built with [rakutentech/go-nozzle](https://github.com/rakutentech/go-nozzle) package. 
 
 
 ## Usage
