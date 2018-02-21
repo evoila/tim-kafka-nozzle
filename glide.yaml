@@ -1,0 +1,56 @@
+package: github.com/evoila/osb-autoscaler-kafka-nozzle
+import:
+- package: github.com/BurntSushi/toml
+  version: v0.2.0
+- package: github.com/Shopify/sarama
+  version: 68920ff1be3bbd31449ab1e2c255c50cedeb755c
+- package: github.com/cloudfoundry-incubator/uaago
+  version: 5253fdf54e4a464366e5ffa8e5f456f5f1e50a2f
+- package: github.com/cloudfoundry/noaa
+  version: ece624d29c30f7c8288edffedecd5a29e6e791cb
+  subpackages:
+  - consumer
+  - errors
+- package: github.com/cloudfoundry/sonde-go
+  version: ae27095c3a1b9977a0ef1928b0147d5689f2e921
+  subpackages:
+  - events
+- package: github.com/davecgh/go-spew
+  version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
+  subpackages:
+  - spew
+- package: github.com/eapache/go-resiliency
+  version: b86b1ec0dd4209a588dc1285cdd471e73525c0b3
+  subpackages:
+  - breaker
+- package: github.com/eapache/queue
+  version: v1.0.2
+- package: github.com/fukata/golang-stats-api-handler
+  version: ab9f90f16caab828afda479fd34bfbbbba2efcee
+- package: github.com/gogo/protobuf
+  version: 74b6e9deaff6ba6da1389ec97351d337f0d08b06
+  subpackages:
+  - gogoproto
+  - proto
+  - protoc-gen-gogo/descriptor
+- package: github.com/golang/snappy
+  version: 5f1c01d9f64b941dd9582c638279d046eda6ca31
+- package: github.com/gorilla/websocket
+  version: e2e3d8414d0fbae04004f151979f4e27c6747fe7
+- package: github.com/hashicorp/logutils
+  version: 0dc08b1671f34c4250ce212759ebd880f743d883
+- package: github.com/klauspost/crc32
+  version: v1.0
+- package: github.com/rakutentech/go-nozzle
+  version: 5ea7d8dd3be1bceb05513fcff0a5cba6e806d706
+- package: golang.org/x/net
+  version: fb93926129b8ec0056f2f458b1f519654814edf0
+  subpackages:
+  - context
+- package: github.com/golang/protobuf
+  version: v1.0.0
+  subpackages:
+  - proto
+- package: github.com/mberger/autoscaler-nozzle
+  subpackages:
+  - autoscaler

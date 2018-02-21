@@ -1,8 +1,12 @@
 package main
 
-import "os"
+import (
+	"os"
+
+	"github.com/evoila/osb-autoscaler-kafka-nozzle/cli"
+)
 
 func main() {
-	cli := &CLI{outStream: os.Stdout, errStream: os.Stderr}
+	cli := &cli.CLI{OutStream: os.Stdout, ErrStream: os.Stderr}
 	os.Exit(cli.Run(os.Args))
 }
