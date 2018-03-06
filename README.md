@@ -17,24 +17,29 @@ Unlike the nozzle from rakutentech this nozzle publishes `ContainerMetric` and `
 Before using the nozzle, you have to setup a correct environment:
 
 1. Create a folder named "go" anywhere on your computer. For example move to
-    `cd /Users/<username>/Development`
-    `mkdir go`
+    * `cd /Users/<username>/Development`
+    * `mkdir go`
 2. Move to the "go" folder and create the folders "src" and "bin
-    `cd /Users/<username>/Development/go`
-    `mkdir src`
-    `mkdir bin`
+    * `cd /Users/<username>/Development/go`
+    * `mkdir src`
+    * `mkdir bin`
 3. Move to the "src" folder and clone the repository
-    `cd src`
-    `git clone https://github.com/evoila/osb-autoscaler-kafka-nozzle --branch develop`
+    * `cd src`
+    * `git clone https://github.com/evoila/osb-autoscaler-kafka-nozzle --branch develop`
 4. Set your $GOPATH
-    `vi ~/.bash-profile` and add
+    * `vi ~/.bash-profile` and add
     
-    `export GOPATH=/Users/<username>/Development/go`
-    `export PATH=$GOPATH/bin:$PATH`
+    * `export GOPATH=/Users/<username>/Development/go`
+    * `export PATH=$GOPATH/bin:$PATH`
+
+    Save your changes, exit VI and source your "bash-profile"
+
+    * `source ~/.bash-profile`
 5. Install "glide" as via
-    `curl https://glide.sh/get | sh`
-6. Run
-    `glide update`
+    * `curl https://glide.sh/get | sh`
+6. Move to the "osb-autoscaler-kafka-nozzle" folder and run update glide
+    * `cd osb-autoscaler-kafka-nozzle`
+    * `glide update`
 
 Now you are ready to roll.
 
