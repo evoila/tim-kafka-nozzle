@@ -51,6 +51,3 @@ import:
   version: v1.0.0
   subpackages:
   - proto
-- package: github.com/mberger/autoscaler-nozzle
-  subpackages:
-  - autoscaler
