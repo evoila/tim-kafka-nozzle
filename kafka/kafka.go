@@ -266,13 +266,20 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_HttpStop:
 		// Do nothing
 	case events.Envelope_LogMessage:
-		/*kp.Stats.Inc(Consume)
-		appID := event.GetLogMessage().GetAppId()
+		protb := &autoscaler.ProtoLogMessage{
+			Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
+			LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
+			LogMessageType:	event.GetLogMessage().GetMessageType().String(),
+			AppId:			event.GetLogMessage().GetAppId(),
+		}
+		out, _ := proto.Marshal(protb)
+		var encoder sarama.ByteEncoder = out
+		
+		kp.Stats.Inc(stats.Consume)
 		kp.Input() <- &sarama.ProducerMessage{
-			Topic:    kp.LogMessageTopic(appID),
-			Value:    &JsonEncoder{event: event},
-			Metadata: metadata{retries: 0},
-		}*/
+			Topic:    "log_messages",
+			Value:	  encoder,
+		}
 	case events.Envelope_ValueMetric:
 		/*kp.Stats.Inc(Consume)
 		kp.Input() <- &sarama.ProducerMessage{

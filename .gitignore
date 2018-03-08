@@ -2,3 +2,4 @@
 bin/
 example/kafka-firehose-nozzle.toml
 manifest.yml
+vendor
