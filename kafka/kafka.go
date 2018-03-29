@@ -17,7 +17,18 @@ import (
 	jsonEncoder "github.com/evoila/osb-autoscaler-kafka-nozzle/encoder"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
 	"github.com/gogo/protobuf/proto"
+	"github.com/cloudfoundry-community/go-cfclient"
 )
+
+// TODO: Credentials aus config laden
+
+var c = &cfclient.Config {
+	ApiAddress:   "",
+	Username:     "",
+	Password:     "",
+}
+
+var client, _ = cfclient.NewClient(c)
 
 const (
 	// TopicAppLogTmpl is Kafka topic name template for LogMessage
@@ -209,6 +220,7 @@ func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Env
 	}()
 
 	kp.Logger.Printf("[INFO] Start to sub input (buffer for sarama input)")
+	
 	go func() {
 		for msg := range kp.subInputCh {
 			kp.Input() <- msg
@@ -218,6 +230,7 @@ func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Env
 	}()
 
 	kp.Logger.Printf("[INFO] Start loop to watch events")
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -271,6 +284,9 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 			LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
 			LogMessageType:	event.GetLogMessage().GetMessageType().String(),
 			AppId:			event.GetLogMessage().GetAppId(),
+			AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
+			Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
+			Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
 		}
 		out, _ := proto.Marshal(protb)
 		var encoder sarama.ByteEncoder = out
@@ -315,7 +331,35 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 			Value: encoder,
 		}
 	}
+}
 
+func getApplicationName(appId string) string {
+	data, _ := client.GetAppRoutes(appId)
+
+	return data[0].Host
+}
+
+func getSpace(appId string) cfclient.Space {
+	data, _ := client.GetAppRoutes(appId)
+
+	var spaceGuid string = data[0].SpaceGuid
+
+	space, _ := client.GetSpaceByGuid(spaceGuid)
+
+	return space
+}
+
+func getSpaceName(space cfclient.Space) string {
+
+	return space.Name
+}
+
+func getOrganizationName(space cfclient.Space) string {
+	var orgGuid string = space.OrganizationGuid
+	
+	org, _ := client.GetOrgByGuid(orgGuid)
+
+	return org.Name
 }
 
 func uuidToString(uuid *events.UUID) string {

@@ -12,6 +12,7 @@ type Config struct {
 	InsecureSSLSkipVerify bool   `toml:"insecure_ssl_skip_verify"`
 	CF                    CF     `toml:"cf"`
 	Kafka                 Kafka  `toml:"kafka"`
+	Credentials		Credentials  `toml:"credentials"`
 }
 
 // CF holds CloudFoundry related configuration.
@@ -30,6 +31,13 @@ type CF struct {
 
 	// Firehose configuration
 	IdleTimeout int `toml:"idle_timeout"` // seconds
+}
+
+// Credentials holds login data for the go cfclient
+type Credentials struct {
+	Api 		string `toml:"api"`
+	Username 	string `toml:"username"`
+	Password 	string `toml:"password"`
 }
 
 // Kafka holds Kafka related configuration
