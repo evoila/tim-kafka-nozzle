@@ -18,17 +18,13 @@ import (
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
 	"github.com/gogo/protobuf/proto"
 	"github.com/cloudfoundry-community/go-cfclient"
+	"github.com/go-redis/redis"
+	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
+	"github.com/evoila/osb-autoscaler-kafka-nozzle/cf"
 )
 
-// TODO: Credentials aus config laden
-
-var c = &cfclient.Config {
-	ApiAddress:   "",
-	Username:     "",
-	Password:     "",
-}
-
-var client, _ = cfclient.NewClient(c)
+var goCfClient, _ = cfclient.NewClient(&cfclient.Config{})
+var goRedisClient = redis.NewClient(&redis.Options{})
 
 const (
 	// TopicAppLogTmpl is Kafka topic name template for LogMessage
@@ -52,6 +48,9 @@ const (
 )
 
 func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Config) (NozzleProducer, error) {
+	goCfClient = cf.NewCfClient(config)
+	goRedisClient = redisClient.NewRedisClient(config)
+
 	// Setup kafka async producer (We must use sync producer)
 	// TODO (tcnksm): Enable to configure more properties.
 	producerConfig := sarama.NewConfig()
@@ -250,101 +249,110 @@ func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Env
 }
 
 func (kp *KafkaProducer) input(event *events.Envelope) {
-	switch event.GetEventType() {
-	case events.Envelope_HttpStart:
-		// Do nothing
-	case events.Envelope_HttpStartStop:
-		kp.Stats.Inc(stats.Consume)
+	appId := event.GetLogMessage().GetAppId()
 
-		if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 {
-			appID := uuidToString(event.GetHttpStartStop().GetApplicationId())
-			//appID := event.GetHttpStartStop().GetApplicationId().String()
-			latency := event.GetHttpStartStop().GetStopTimestamp() - event.GetHttpStartStop().GetStartTimestamp()
-			protb := &autoscaler.ProtoHttpMetric{
-				Timestamp:   event.GetTimestamp() / 1000 / 1000, //convert to ms
-				MetricName:  "HttpMetric",
-				AppId:       appID,
-				Requests:    1,
-				Latency:     int32(latency) / 1000 / 1000, //convert to ms
-				Description: "Statuscode: " + strconv.Itoa(int(event.GetHttpStartStop().GetStatusCode())),
+	if goRedisClient.Get(appId).Val() == "" {
+		goRedisClient.Set(appId, "false", 0)
+	}
+
+	if goRedisClient.Get(appId).Val() == "true" {
+	
+		switch event.GetEventType() {
+		case events.Envelope_HttpStart:
+			// Do nothing
+		case events.Envelope_HttpStartStop:
+			kp.Stats.Inc(stats.Consume)
+
+			if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 {
+				appID := uuidToString(event.GetHttpStartStop().GetApplicationId())
+				//appID := event.GetHttpStartStop().GetApplicationId().String()
+				latency := event.GetHttpStartStop().GetStopTimestamp() - event.GetHttpStartStop().GetStartTimestamp()
+				protb := &autoscaler.ProtoHttpMetric{
+					Timestamp:   event.GetTimestamp() / 1000 / 1000, //convert to ms
+					MetricName:  "HttpMetric",
+					AppId:       appID,
+					Requests:    1,
+					Latency:     int32(latency) / 1000 / 1000, //convert to ms
+					Description: "Statuscode: " + strconv.Itoa(int(event.GetHttpStartStop().GetStatusCode())),
+				}
+				out, _ := proto.Marshal(protb)
+				var encoder sarama.ByteEncoder = out
+
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic: "metric_http",
+					Value: encoder,
+				}
+			}
+		case events.Envelope_HttpStop:
+			// Do nothing
+		case events.Envelope_LogMessage:
+			protb := &autoscaler.ProtoLogMessage{
+				Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
+				LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
+				LogMessageType:	event.GetLogMessage().GetMessageType().String(),
+				AppId:			event.GetLogMessage().GetAppId(),
+				AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
+				Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
+				Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
+			}
+			out, _ := proto.Marshal(protb)
+			var encoder sarama.ByteEncoder = out
+			
+			kp.Stats.Inc(stats.Consume)
+			kp.Input() <- &sarama.ProducerMessage{
+				Topic:    "log_messages",
+				Value:	  encoder,
+			}
+		case events.Envelope_ValueMetric:
+			/*kp.Stats.Inc(Consume)
+			kp.Input() <- &sarama.ProducerMessage{
+				Topic:    kp.ValueMetricTopic(),
+				Value:    &JsonEncoder{event: event},
+				Metadata: metadata{retries: 0},
+			}*/
+		case events.Envelope_CounterEvent:
+			// Do nothing
+		case events.Envelope_Error:
+			// Do nothing
+		case events.Envelope_ContainerMetric:
+			protb := &autoscaler.ProtoContainerMetric{
+				Timestamp:     event.GetTimestamp() / 1000 / 1000, //convert to ms
+				MetricName:    "InstanceContainerMetric",
+				AppId:         event.GetContainerMetric().GetApplicationId(),
+				Cpu:           int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
+				Ram:           int64(event.GetContainerMetric().GetMemoryBytes()),
+				InstanceIndex: event.GetContainerMetric().GetInstanceIndex(),
+				Description:   "",
 			}
 			out, _ := proto.Marshal(protb)
 			var encoder sarama.ByteEncoder = out
 
+			kp.Stats.Inc(stats.Consume)
+			//appID := event.GetContainerMetric().GetApplicationId()
 			kp.Input() <- &sarama.ProducerMessage{
-				Topic: "metric_http",
+				Topic: "containerMetricAsJSON",
+				Value: &jsonEncoder.JSONEncoder{Event: event},
+			}
+			kp.Input() <- &sarama.ProducerMessage{
+				Topic: "metric_container",
 				Value: encoder,
 			}
-		}
-	case events.Envelope_HttpStop:
-		// Do nothing
-	case events.Envelope_LogMessage:
-		protb := &autoscaler.ProtoLogMessage{
-			Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
-			LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
-			LogMessageType:	event.GetLogMessage().GetMessageType().String(),
-			AppId:			event.GetLogMessage().GetAppId(),
-			AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
-			Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
-			Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
-		}
-		out, _ := proto.Marshal(protb)
-		var encoder sarama.ByteEncoder = out
-		
-		kp.Stats.Inc(stats.Consume)
-		kp.Input() <- &sarama.ProducerMessage{
-			Topic:    "log_messages",
-			Value:	  encoder,
-		}
-	case events.Envelope_ValueMetric:
-		/*kp.Stats.Inc(Consume)
-		kp.Input() <- &sarama.ProducerMessage{
-			Topic:    kp.ValueMetricTopic(),
-			Value:    &JsonEncoder{event: event},
-			Metadata: metadata{retries: 0},
-		}*/
-	case events.Envelope_CounterEvent:
-		// Do nothing
-	case events.Envelope_Error:
-		// Do nothing
-	case events.Envelope_ContainerMetric:
-		protb := &autoscaler.ProtoContainerMetric{
-			Timestamp:     event.GetTimestamp() / 1000 / 1000, //convert to ms
-			MetricName:    "InstanceContainerMetric",
-			AppId:         event.GetContainerMetric().GetApplicationId(),
-			Cpu:           int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
-			Ram:           int64(event.GetContainerMetric().GetMemoryBytes()),
-			InstanceIndex: event.GetContainerMetric().GetInstanceIndex(),
-			Description:   "",
-		}
-		out, _ := proto.Marshal(protb)
-		var encoder sarama.ByteEncoder = out
-
-		kp.Stats.Inc(stats.Consume)
-		//appID := event.GetContainerMetric().GetApplicationId()
-		kp.Input() <- &sarama.ProducerMessage{
-			Topic: "containerMetricAsJSON",
-			Value: &jsonEncoder.JSONEncoder{Event: event},
-		}
-		kp.Input() <- &sarama.ProducerMessage{
-			Topic: "metric_container",
-			Value: encoder,
 		}
 	}
 }
 
 func getApplicationName(appId string) string {
-	data, _ := client.GetAppRoutes(appId)
+	data, _ := goCfClient.GetAppRoutes(appId)
 
 	return data[0].Host
 }
 
 func getSpace(appId string) cfclient.Space {
-	data, _ := client.GetAppRoutes(appId)
+	data, _ := goCfClient.GetAppRoutes(appId)
 
 	var spaceGuid string = data[0].SpaceGuid
 
-	space, _ := client.GetSpaceByGuid(spaceGuid)
+	space, _ := goCfClient.GetSpaceByGuid(spaceGuid)
 
 	return space
 }
@@ -357,7 +365,7 @@ func getSpaceName(space cfclient.Space) string {
 func getOrganizationName(space cfclient.Space) string {
 	var orgGuid string = space.OrganizationGuid
 	
-	org, _ := client.GetOrgByGuid(orgGuid)
+	org, _ := goCfClient.GetOrgByGuid(orgGuid)
 
 	return org.Name
 }

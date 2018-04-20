@@ -12,7 +12,8 @@ type Config struct {
 	InsecureSSLSkipVerify bool   `toml:"insecure_ssl_skip_verify"`
 	CF                    CF     `toml:"cf"`
 	Kafka                 Kafka  `toml:"kafka"`
-	Credentials		Credentials  `toml:"credentials"`
+	GoCfClient			  GoCfClient  `toml:"gocfclient"`
+	GoRedisClient		  GoRedisClient `toml:"goredisclient"`
 }
 
 // CF holds CloudFoundry related configuration.
@@ -34,10 +35,16 @@ type CF struct {
 }
 
 // Credentials holds login data for the go cfclient
-type Credentials struct {
+type GoCfClient struct {
 	Api 		string `toml:"api"`
 	Username 	string `toml:"username"`
 	Password 	string `toml:"password"`
+}
+
+type GoRedisClient struct {
+	Addr		string `toml:"addr"`
+	Password 	string `toml:"password"`
+	DB			int `toml:"db"`
 }
 
 // Kafka holds Kafka related configuration
