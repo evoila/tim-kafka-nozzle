@@ -253,7 +253,6 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_HttpStart:
 		// Do nothing
 	case events.Envelope_HttpStartStop:
-		kp.Stats.Inc(stats.Consume)
 		if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 {
 			appId := uuidToString(event.GetHttpStartStop().GetApplicationId())
 
@@ -270,6 +269,7 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 				out, _ := proto.Marshal(protb)
 				var encoder sarama.ByteEncoder = out
 
+				kp.Stats.Inc(stats.Consume)
 				kp.Input() <- &sarama.ProducerMessage {
 					Topic: "metric_http",
 					Value: encoder,
