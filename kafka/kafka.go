@@ -249,28 +249,20 @@ func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Env
 }
 
 func (kp *KafkaProducer) input(event *events.Envelope) {
-	appId := event.GetLogMessage().GetAppId()
+	switch event.GetEventType() {
+	case events.Envelope_HttpStart:
+		// Do nothing
+	case events.Envelope_HttpStartStop:
+		kp.Stats.Inc(stats.Consume)
+		if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 {
+			appId := uuidToString(event.GetHttpStartStop().GetApplicationId())
 
-	if goRedisClient.Get(appId).Val() == "" {
-		goRedisClient.Set(appId, "false", 0)
-	}
-
-	if goRedisClient.Get(appId).Val() == "true" {
-	
-		switch event.GetEventType() {
-		case events.Envelope_HttpStart:
-			// Do nothing
-		case events.Envelope_HttpStartStop:
-			kp.Stats.Inc(stats.Consume)
-
-			if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 {
-				appID := uuidToString(event.GetHttpStartStop().GetApplicationId())
-				//appID := event.GetHttpStartStop().GetApplicationId().String()
+			if checkIfPublishIsPossible(appId) {
 				latency := event.GetHttpStartStop().GetStopTimestamp() - event.GetHttpStartStop().GetStartTimestamp()
 				protb := &autoscaler.ProtoHttpMetric{
 					Timestamp:   event.GetTimestamp() / 1000 / 1000, //convert to ms
 					MetricName:  "HttpMetric",
-					AppId:       appID,
+					AppId:       appId,
 					Requests:    1,
 					Latency:     int32(latency) / 1000 / 1000, //convert to ms
 					Description: "Statuscode: " + strconv.Itoa(int(event.GetHttpStartStop().GetStatusCode())),
@@ -278,64 +270,75 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 				out, _ := proto.Marshal(protb)
 				var encoder sarama.ByteEncoder = out
 
-				kp.Input() <- &sarama.ProducerMessage{
+				kp.Input() <- &sarama.ProducerMessage {
 					Topic: "metric_http",
 					Value: encoder,
 				}
 			}
-		case events.Envelope_HttpStop:
-			// Do nothing
-		case events.Envelope_LogMessage:
-			protb := &autoscaler.ProtoLogMessage{
-				Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
-				LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
-				LogMessageType:	event.GetLogMessage().GetMessageType().String(),
-				AppId:			event.GetLogMessage().GetAppId(),
-				AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
-				Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
-				Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
+		}
+	case events.Envelope_HttpStop:
+		// Do nothing
+	case events.Envelope_LogMessage:
+		if event.GetLogMessage().GetAppId() != "" {
+			appId := event.GetLogMessage().GetAppId()
+		
+			if checkIfPublishIsPossible(appId) {
+				protb := &autoscaler.ProtoLogMessage{
+					Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
+					LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
+					LogMessageType:	event.GetLogMessage().GetMessageType().String(),
+					AppId:			appId,
+					AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
+					Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
+					Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
+				}
+				out, _ := proto.Marshal(protb)
+				var encoder sarama.ByteEncoder = out
+				
+				kp.Stats.Inc(stats.Consume)
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic:    "log_messages",
+					Value:	  encoder,
+				}
 			}
-			out, _ := proto.Marshal(protb)
-			var encoder sarama.ByteEncoder = out
-			
-			kp.Stats.Inc(stats.Consume)
-			kp.Input() <- &sarama.ProducerMessage{
-				Topic:    "log_messages",
-				Value:	  encoder,
-			}
-		case events.Envelope_ValueMetric:
-			/*kp.Stats.Inc(Consume)
-			kp.Input() <- &sarama.ProducerMessage{
-				Topic:    kp.ValueMetricTopic(),
-				Value:    &JsonEncoder{event: event},
-				Metadata: metadata{retries: 0},
-			}*/
-		case events.Envelope_CounterEvent:
-			// Do nothing
-		case events.Envelope_Error:
-			// Do nothing
-		case events.Envelope_ContainerMetric:
-			protb := &autoscaler.ProtoContainerMetric{
-				Timestamp:     event.GetTimestamp() / 1000 / 1000, //convert to ms
-				MetricName:    "InstanceContainerMetric",
-				AppId:         event.GetContainerMetric().GetApplicationId(),
-				Cpu:           int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
-				Ram:           int64(event.GetContainerMetric().GetMemoryBytes()),
-				InstanceIndex: event.GetContainerMetric().GetInstanceIndex(),
-				Description:   "",
-			}
-			out, _ := proto.Marshal(protb)
-			var encoder sarama.ByteEncoder = out
+		}
+	case events.Envelope_ValueMetric:
+		/*kp.Stats.Inc(Consume)
+		kp.Input() <- &sarama.ProducerMessage{
+			Topic:    kp.ValueMetricTopic(),
+			Value:    &JsonEncoder{event: event},
+			Metadata: metadata{retries: 0},
+		}*/
+	case events.Envelope_CounterEvent:
+		// Do nothing
+	case events.Envelope_Error:
+		// Do nothing
+	case events.Envelope_ContainerMetric:
+		if event.GetContainerMetric().GetApplicationId() != "" {
+			appId := event.GetContainerMetric().GetApplicationId()
 
-			kp.Stats.Inc(stats.Consume)
-			//appID := event.GetContainerMetric().GetApplicationId()
-			kp.Input() <- &sarama.ProducerMessage{
-				Topic: "containerMetricAsJSON",
-				Value: &jsonEncoder.JSONEncoder{Event: event},
-			}
-			kp.Input() <- &sarama.ProducerMessage{
-				Topic: "metric_container",
-				Value: encoder,
+			if checkIfPublishIsPossible(appId) {
+				protb := &autoscaler.ProtoContainerMetric{
+					Timestamp:     event.GetTimestamp() / 1000 / 1000, //convert to ms
+					MetricName:    "InstanceContainerMetric",
+					AppId:         appId,
+					Cpu:           int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
+					Ram:           int64(event.GetContainerMetric().GetMemoryBytes()),
+					InstanceIndex: event.GetContainerMetric().GetInstanceIndex(),
+					Description:   "",
+				}
+				out, _ := proto.Marshal(protb)
+				var encoder sarama.ByteEncoder = out
+		
+				kp.Stats.Inc(stats.Consume)
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic: "containerMetricAsJSON",
+					Value: &jsonEncoder.JSONEncoder{Event: event},
+				}
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic: "metric_container",
+					Value: encoder,
+				}
 			}
 		}
 	}
@@ -368,6 +371,20 @@ func getOrganizationName(space cfclient.Space) string {
 	org, _ := goCfClient.GetOrgByGuid(orgGuid)
 
 	return org.Name
+}
+
+func checkIfPublishIsPossible(appId string) bool {
+	subscribed := goRedisClient.Get(appId).Val()
+	
+	if subscribed == "" {
+		goRedisClient.Set(appId, "false", 0)
+	}
+
+	if subscribed == "true" {
+		return true
+	} else {
+		return false
+	}
 }
 
 func uuidToString(uuid *events.UUID) string {
