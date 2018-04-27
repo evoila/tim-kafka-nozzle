@@ -254,7 +254,7 @@ func (cli *CLI) Run(args []string) int {
 				logger.Printf("[INFO] Publish per sec: %d", stats.PublishPerSec)
 				logger.Printf("[INFO] Published messages: %d", stats.Publish)
 
-				logger.Printf("[INFO] Publish delay: %d", stats.Consume-stats.Publish-stats.PublishFail)
+				logger.Printf("[INFO] Publish delay: %d", stats.Delay)
 
 				logger.Printf("[INFO] SubInput buffer: %d", stats.SubInputBuffer)
 
