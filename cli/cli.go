@@ -223,6 +223,11 @@ func (cli *CLI) Run(args []string) int {
 		return ExitCodeError
 	}
 
+	if config.Kafka.Brokers != nil {
+		logger.Printf("[INFO] Brokers %v", config.Kafka.Brokers)
+	}
+	
+
 	// Setup nozzle producer
 	var producer kafka.NozzleProducer
 	if debug {
