@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"strings"
 
 	"golang.org/x/net/context"
 
@@ -25,6 +26,7 @@ import (
 
 var goCfClient, _ = cfclient.NewClient(&cfclient.Config{})
 var goRedisClient = redis.NewClient(&redis.Options{})
+var logMessageStorage []string
 
 const (
 	// TopicAppLogTmpl is Kafka topic name template for LogMessage
@@ -281,24 +283,39 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_LogMessage:
 		if event.GetLogMessage().GetAppId() != "" {
 			appId := event.GetLogMessage().GetAppId()
-		
-			if checkIfPublishIsPossible(appId) {
-				protb := &autoscaler.ProtoLogMessage{
-					Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
-					LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
-					LogMessageType:	event.GetLogMessage().GetMessageType().String(),
-					AppId:			appId,
-					AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
-					Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
-					Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
+			sourceType := event.GetLogMessage().GetSourceType()
+
+			if checkIfPublishIsPossible(appId) && sourceType != "DEA" {
+				var logMessageToPublish string
+				tmpLogMessage := string(event.GetLogMessage().GetMessage()[:])
+				if strings.HasPrefix(tmpLogMessage, "\t") {
+					tmpLogMessage := strings.Replace(tmpLogMessage, "\t", "", -1)
+					logMessageStorage = append(logMessageStorage, tmpLogMessage)
+				} else {
+					logMessageToPublish = strings.Join(logMessageStorage, ", ")
+					logMessageStorage = nil
+					logMessageStorage = append(logMessageStorage, tmpLogMessage)
 				}
-				out, _ := proto.Marshal(protb)
-				var encoder sarama.ByteEncoder = out
-				
-				kp.Stats.Inc(stats.Consume)
-				kp.Input() <- &sarama.ProducerMessage{
-					Topic:    "log_messages",
-					Value:	  encoder,
+
+				if logMessageToPublish != "" {
+					protb := &autoscaler.ProtoLogMessage{
+						Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
+						LogMessage:		logMessageToPublish,
+						LogMessageType:	event.GetLogMessage().GetMessageType().String(),
+						SourceType:		sourceType,
+						AppId:			appId,
+						AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
+						Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
+						Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
+					}
+					out, _ := proto.Marshal(protb)
+					var encoder sarama.ByteEncoder = out
+					
+					kp.Stats.Inc(stats.Consume)
+					kp.Input() <- &sarama.ProducerMessage{
+						Topic:    "log_messages",
+						Value:	  encoder,
+					}
 				}
 			}
 		}
