@@ -2,3 +2,7 @@
 bin/
 example/kafka-firehose-nozzle.toml
 manifest.yml
+vendor
+glide.lock
+osb-autoscaler-kafka-nozzle.exe
+osb-autoscaler-kafka-nozzle

@@ -9,7 +9,7 @@ subscription_id = "example-kafka-firehose-nozzle"
 
 [cf]
 # Endpoint where nozzle consumes logs
-doppler_address = "wss://doppler.cf.dev.eu-de-central.msh.host"
+doppler_address = <doppler_address>
 
 # To access to the firehoze and consume logs from there,
 # you need an access token for that.
@@ -20,18 +20,30 @@ doppler_address = "wss://doppler.cf.dev.eu-de-central.msh.host"
 
 # Endpoint where nozzle fetches the access token
 # to read the firehose messages. 
-uaa_address = "https://uaa.cf.dev.eu-de-central.msh.host"
+uaa_address = <uaa_address>
 
 # username & password to fetch the firehose access token
-username = "prometheus-firehose"
-password = "#####"
+username = <username>
+password = <password>
 
 # token for subscribing data from firehose
 # token = "np9q8b4qp3;vqo...."
 
+#Credentials for the go cfclient connection
+[gocfclient]
+api = <api>
+username = <username>
+password = <password>
+
+#Credentials for the go redis connection
+[goredisclient]
+addr = <ip_address>
+password = <password>
+db = <db>
+
 [kafka]
 # The list of kafka brokers IP
-brokers = ["10.244.0.3:9092"]
+brokers = ["127.0.0.1:9092"]
 
 # The producer retry logic
 retry_max = 10
@@ -41,6 +53,5 @@ retry_backoff_ms = 500
 # Each events are sent to the each topic on kafka
 [kafka.topic]
 log_message = "log"
-#log_message_fmt = "log-%s"
 log_message_fmt = "log-%s"
 value_metric = "platformMetric"

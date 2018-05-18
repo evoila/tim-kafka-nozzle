@@ -223,6 +223,11 @@ func (cli *CLI) Run(args []string) int {
 		return ExitCodeError
 	}
 
+	if config.Kafka.Brokers != nil {
+		logger.Printf("[INFO] Brokers %v", config.Kafka.Brokers)
+	}
+	
+
 	// Setup nozzle producer
 	var producer kafka.NozzleProducer
 	if debug {
@@ -254,7 +259,7 @@ func (cli *CLI) Run(args []string) int {
 				logger.Printf("[INFO] Publish per sec: %d", stats.PublishPerSec)
 				logger.Printf("[INFO] Published messages: %d", stats.Publish)
 
-				logger.Printf("[INFO] Publish delay: %d", stats.Consume-stats.Publish-stats.PublishFail)
+				logger.Printf("[INFO] Publish delay: %d", stats.Delay)
 
 				logger.Printf("[INFO] SubInput buffer: %d", stats.SubInputBuffer)
 
