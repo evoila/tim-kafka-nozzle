@@ -362,17 +362,15 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 }
 
 func getApplicationName(appId string) string {
-	data, _ := goCfClient.GetAppRoutes(appId)
+	data, _ := goCfClient.GetAppByGuid(appId)
 
-	return data[0].Host
+	return data.Name	
 }
 
-func getSpace(appId string) cfclient.Space {
-	data, _ := goCfClient.GetAppRoutes(appId)
+func getSpace(appId string) (cfclient.Space) {
+	data, _ := goCfClient.GetAppByGuid(appId)
 
-	var spaceGuid string = data[0].SpaceGuid
-
-	space, _ := goCfClient.GetSpaceByGuid(spaceGuid)
+	space, _ := goCfClient.GetSpaceByGuid(data.SpaceGuid)
 
 	return space
 }
@@ -383,10 +381,9 @@ func getSpaceName(space cfclient.Space) string {
 }
 
 func getOrganizationName(space cfclient.Space) string {
-	var orgGuid string = space.OrganizationGuid
 	
-	org, _ := goCfClient.GetOrgByGuid(orgGuid)
-
+	org, _ := goCfClient.GetOrgByGuid(space.OrganizationGuid)
+	
 	return org.Name
 }
 
