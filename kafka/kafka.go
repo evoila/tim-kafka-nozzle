@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"strings"
 
 	"golang.org/x/net/context"
 
@@ -26,7 +25,7 @@ import (
 
 var goCfClient, _ = cfclient.NewClient(&cfclient.Config{})
 var goRedisClient = redis.NewClient(&redis.Options{})
-var logMessageStorage []string
+var protoLogMessageMap map[string] autoscaler.ProtoLogMessage
 
 const (
 	// TopicAppLogTmpl is Kafka topic name template for LogMessage
@@ -52,6 +51,7 @@ const (
 func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Config) (NozzleProducer, error) {
 	goCfClient = cf.NewCfClient(config)
 	goRedisClient = redisClient.NewRedisClient(config)
+	protoLogMessageMap = make(map[string] autoscaler.ProtoLogMessage)
 
 	// Setup kafka async producer (We must use sync producer)
 	// TODO (tcnksm): Enable to configure more properties.
@@ -282,43 +282,29 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 		// Do nothing
 	case events.Envelope_LogMessage:
 		if event.GetLogMessage().GetAppId() != "" {
-			appId := event.GetLogMessage().GetAppId()
-			sourceType := event.GetLogMessage().GetSourceType()
-
-			if checkIfPublishIsPossible(appId) && sourceType != "DEA" {
-				var logMessageToPublish string
-				tmpLogMessage := string(event.GetLogMessage().GetMessage()[:])
-				if strings.HasPrefix(tmpLogMessage, "\t") {
-					tmpLogMessage := strings.Replace(tmpLogMessage, "\t", "", -1)
-					logMessageStorage = append(logMessageStorage, tmpLogMessage)
-				} else {
-					logMessageToPublish = strings.Join(logMessageStorage, ", ")
-					logMessageStorage = nil
-					logMessageStorage = append(logMessageStorage, tmpLogMessage)
+			if checkIfPublishIsPossible(event.GetLogMessage().GetAppId()) && checkIfSourceTypeIsValid(event.GetLogMessage().GetSourceType()) {
+				protb := &autoscaler.ProtoLogMessage{
+					Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
+					LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
+					LogMessageType:	event.GetLogMessage().GetMessageType().String(),
+					SourceType:		event.GetLogMessage().GetSourceType(),
+					AppId:			event.GetLogMessage().GetAppId(),
+					AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
+					Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
+					Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
 				}
-
-				if logMessageToPublish != "" {
-					protb := &autoscaler.ProtoLogMessage{
-						Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
-						LogMessage:		logMessageToPublish,
-						LogMessageType:	event.GetLogMessage().GetMessageType().String(),
-						SourceType:		sourceType,
-						AppId:			appId,
-						AppName:		getApplicationName(event.GetLogMessage().GetAppId()),
-						Space:			getSpaceName(getSpace(event.GetLogMessage().GetAppId())),
-						Organization:	getOrganizationName(getSpace(event.GetLogMessage().GetAppId())),
-					}
-					out, _ := proto.Marshal(protb)
-					var encoder sarama.ByteEncoder = out
-					
-					kp.Stats.Inc(stats.Consume)
-					kp.Input() <- &sarama.ProducerMessage{
-						Topic:    "log_messages",
-						Value:	  encoder,
-					}
+				
+				out, _ := proto.Marshal(protb)
+				var encoder sarama.ByteEncoder = out
+				
+				kp.Stats.Inc(stats.Consume)
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic:    "log_messages",
+					Value:	  encoder,
 				}
 			}
 		}
+
 	case events.Envelope_ValueMetric:
 		/*kp.Stats.Inc(Consume)
 		kp.Input() <- &sarama.ProducerMessage{
@@ -396,9 +382,17 @@ func checkIfPublishIsPossible(appId string) bool {
 
 	if subscribed == "true" {
 		return true
-	} else {
-		return false
 	}
+	
+	return false
+}
+
+func checkIfSourceTypeIsValid(sourceType string) bool {
+	if sourceType == "RTR" || sourceType == "STG" || sourceType == "APP/PROC/WEB" {
+		return true
+	}
+
+	return false
 }
 
 func uuidToString(uuid *events.UUID) string {
