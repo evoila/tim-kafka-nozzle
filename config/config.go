@@ -1,79 +1,82 @@
 package config
 
 import (
-	"path/filepath"
-
-	"github.com/BurntSushi/toml"
+	"github.com/caarlos0/env"
 )
 
 // Config is kafka-firehose-nozzle configuration.
 type Config struct {
-	SubscriptionID        string `toml:"subscription_id"`
-	InsecureSSLSkipVerify bool   `toml:"insecure_ssl_skip_verify"`
-	CF                    CF     `toml:"cf"`
-	Kafka                 Kafka  `toml:"kafka"`
-	GoCfClient			  GoCfClient  `toml:"gocfclient"`
-	GoRedisClient		  GoRedisClient `toml:"goredisclient"`
+	SubscriptionID        string `env:"SUBSCRIPTION_ID"`
+	InsecureSSLSkipVerify bool   `env:"INSECURE_SSL_SKIP_VERIFY"`
+	CF                    CF
+	Kafka                 Kafka
+	GoRedisClient         GoRedisClient
 }
 
 // CF holds CloudFoundry related configuration.
 type CF struct {
 	// dopplerAddr is doppler firehose address.
 	// It must start with `ws://` or `wss://` schema because this is websocket.
-	DopplerAddr string `toml:"doppler_address"`
+	DopplerAddr string `env:"CF_DOPPLER_ADDRESS"`
 
 	// UAAAddr is UAA server address.
-	UAAAddr string `toml:"uaa_address"`
+	UAAAddr string `env:"CF_UAA_ADDRESS"`
 
 	// Username is the username which can has scope of `doppler.firehose`.
-	Username string `toml:"username"`
-	Password string `toml:"password"`
-	Token    string `toml:"token"`
+	Username string `env:"CF_USERNAME"`
+	Password string `env:"CF_PASSWORD"`
+	Token    string `env:"CF_TOKEN"`
 
 	// Firehose configuration
-	IdleTimeout int `toml:"idle_timeout"` // seconds
-}
-
-// Credentials holds login data for the go cfclient
-type GoCfClient struct {
-	Api 		string `toml:"api"`
-	Username 	string `toml:"username"`
-	Password 	string `toml:"password"`
+	IdleTimeout int `env:"CF_FIREHOSE_IDLE_TIMEOUT"` // seconds
 }
 
 type GoRedisClient struct {
-	Addr		string `toml:"addr"`
-	Password 	string `toml:"password"`
-	DB			int `toml:"db"`
+	Addr     string `env:"GO_REDIS_CLIENT_ADDRESS"`
+	Password string `env:"GO_REDIS_CLIENT_PASSWORD"`
+	DB       int    `env:"GO_REDIS_CLIENT_DB"`
 }
 
 // Kafka holds Kafka related configuration
 type Kafka struct {
-	Brokers []string `toml:"brokers"`
-	Topic   Topic    `toml:"topic"`
+	Brokers []string `env:"KAFKA_BROKERS"`
+	Topic   Topic
 
-	RetryMax       int `toml:"retry_max"`
-	RetryBackoff   int `toml:"retry_backoff_ms"`
-	RepartitionMax int `toml:"repartition_max"`
+	RetryMax       int `env:"KAFKA_RETRY_MAX"`
+	RetryBackoff   int `env:"KAFKA_RETRY_BACKOFF_MS"`
+	RepartitionMax int `env:"KAFKA_REPARTITION_MAX"`
 }
 
 type Topic struct {
-	LogMessage    string `toml:"log_message"`
-	LogMessageFmt string `toml:"log_message_fmt"`
-	ValueMetric   string `toml:"value_metric"`
+	LogMessage    string `env:"KAFKA_TOPIC_LOG_MESSAGE"`
+	LogMessageFmt string `env:"KAFKA_TOPIC_LOG_MESSAGE_FMT"`
+	ValueMetric   string `env:"KAFKA_TOPIC_VALUE_METRIC"`
 }
 
 // LoadConfig reads configuration file
 func LoadConfig(path string) (*Config, error) {
-	path, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
+
+	cf := CF{}
+	env.Parse(&cf)
+
+	goredisclient := GoRedisClient{}
+	env.Parse(&goredisclient)
+
+	topic := Topic{}
+	env.Parse(&topic)
+
+	kafka := Kafka{
+		Topic: topic,
+	}
+	env.Parse(&kafka)
+
+	config := &Config{
+		CF:            cf,
+		Kafka:         kafka,
+		GoRedisClient: goredisclient,
 	}
 
-	config := new(Config)
-	if _, err := toml.DecodeFile(path, &config); err != nil {
-		return nil, err
-	}
+	env.Parse(&config)
 
 	return config, nil
 }

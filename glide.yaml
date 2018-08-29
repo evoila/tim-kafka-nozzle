@@ -51,3 +51,5 @@ import:
   version: v1.0.0
   subpackages:
   - proto
+- package: github.com/caarlos0/env
+  version: v3.3.0
