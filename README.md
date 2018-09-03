@@ -54,20 +54,32 @@ $ autoscaler-nozzle [options]
 The following are available options,
 
 ```bash
--config PATH       Path to configuration file
--username NAME     username to grant access token to connect firehose
--password PASS     password to grant access token to connect firehose
 -worker NUM        Number of producer worker. Default is number of CPU core
--subscription ID   Subscription ID for firehose. Default is 'kafka-firehose-nozzle'
 -debug             Output event to stdout instead of producing message to kafka
 -log-level LEVEL   Log level. Default level is INFO (DEBUG|INFO|ERROR)
 ```
 
-You can set `password` via `UAA_PASSWORD` environmental variable.
-
 ## Configuration
 
-You can configure it via `.toml` file. You can see the example and description of this configuration file in [example](/example) directory. The default name for the configuration file is `kafka-firehose-nozzle.toml`.
+You can configure it via environment variables
+
+```bash
+GOPACKAGENAME:              Name of the go main package
+SUBSCRIPTION_ID:            Subscription ID
+CF_DOPPLER_ADDRESS:         Cloud Foundry doppler address # starts with wss://
+CF_UAA_ADDRESS:             Cloud Foundry UAA address
+CF_USERNAME:                Cloud Foundry username
+CF_PASSWORD:                Cloud Foundry password
+REDIS_HOSTS:                Redis hosts # comma seperated list
+REDIS_PORT:                 Redis port
+REDIS_PASSWORD:             Redis pasword
+KAFKA_HOSTS:                Kafka hosts # comma seperated list
+KAFKA_PORT:                 Kafka port
+KAFKA_RETRY_MAX:            Max attempts to connect to kafka # integer
+KAFKA_RETRY_BACKOFF_MS:     Time to wait before attempting to retry a failed request to a given topic partition # in ms
+```
+
+You can find an example manifest.yml file for Cloud Foundry in [example-manifest.yml](example-manifest.yml)
 
 ## Install
 

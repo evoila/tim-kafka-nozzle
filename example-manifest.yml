@@ -1,0 +1,23 @@
+instances: 1
+timeout: 180
+memory: 1024M
+domain: <domain>
+applications:
+- name: <name>
+  host: <host>
+  buildpack: https://github.com/cloudfoundry/go-buildpack.git
+  health-check-type: process
+  env: 
+    GOPACKAGENAME: main
+    SUBSCRIPTION_ID: <subscription_id>
+    CF_DOPPLER_ADDRESS: <cf_doppler_address> 
+    CF_UAA_ADDRESS: <cf_uaa_address>
+    CF_USERNAME: <cf_username>
+    CF_PASSWORD: <cf_password>
+    REDIS_HOSTS: <redis_hosts> 
+    REDIS_PORT: <redis_port>
+    REDIS_PASSWORD: <redis_password>
+    KAFKA_HOSTS: <kafka_hosts> 
+    KAFKA_PORT: <kafka_port>
+    KAFKA_RETRY_MAX: <kafka_retry_max> 
+    KAFKA_RETRY_BACKOFF_MS: <kafka_retry_backoff_ms> 
