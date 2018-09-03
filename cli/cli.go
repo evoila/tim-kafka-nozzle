@@ -224,9 +224,24 @@ func (cli *CLI) Run(args []string) int {
 	}
 
 	if config.Kafka.Brokers != nil {
+
+		for i := range config.Kafka.Brokers {
+			config.Kafka.Brokers[i] += ":"
+			config.Kafka.Brokers[i] += config.Kafka.Port
+		}
+
 		logger.Printf("[INFO] Brokers %v", config.Kafka.Brokers)
 	}
-	
+
+	if config.GoRedisClient.Addrs != nil {
+
+		for i := range config.GoRedisClient.Addrs {
+			config.GoRedisClient.Addrs[i] += ":"
+			config.GoRedisClient.Addrs[i] += config.GoRedisClient.Port
+		}
+
+		logger.Printf("[INFO] Redis Cluster %v", config.GoRedisClient.Addrs)
+	}
 
 	// Setup nozzle producer
 	var producer kafka.NozzleProducer

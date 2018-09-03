@@ -32,14 +32,16 @@ type CF struct {
 }
 
 type GoRedisClient struct {
-	Addr     string `env:"GO_REDIS_CLIENT_ADDRESS"`
-	Password string `env:"GO_REDIS_CLIENT_PASSWORD"`
-	DB       int    `env:"GO_REDIS_CLIENT_DB"`
+	Addrs    []string `env:"REDIS_HOSTS"`
+	Port     string   `env:"REDIS_PORT"`
+	Password string   `env:"REDIS_PASSWORD"`
+	DB       int      `env:"REDIS_DB"`
 }
 
 // Kafka holds Kafka related configuration
 type Kafka struct {
-	Brokers []string `env:"KAFKA_BROKERS"`
+	Brokers []string `env:"KAFKA_HOSTS"`
+	Port    string   `env:"KAFKA_PORT"`
 	Topic   Topic
 
 	RetryMax       int `env:"KAFKA_RETRY_MAX"`

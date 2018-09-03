@@ -16,14 +16,13 @@ import (
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/autoscaler"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
 	jsonEncoder "github.com/evoila/osb-autoscaler-kafka-nozzle/encoder"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
-	"github.com/gogo/protobuf/proto"
-	"github.com/go-redis/redis"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
+	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
+	"github.com/go-redis/redis"
+	"github.com/gogo/protobuf/proto"
 )
 
-var goRedisClient = redis.NewClient(&redis.Options{})
-var protoLogMessageMap map[string] autoscaler.ProtoLogMessage
+var goRedisClient = redis.NewClusterClient(&redis.ClusterOptions{})
 
 const (
 	// TopicAppLogTmpl is Kafka topic name template for LogMessage
@@ -48,7 +47,6 @@ const (
 
 func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Config) (NozzleProducer, error) {
 	goRedisClient = redisClient.NewRedisClient(config)
-	protoLogMessageMap = make(map[string] autoscaler.ProtoLogMessage)
 
 	// Setup kafka async producer (We must use sync producer)
 	// TODO (tcnksm): Enable to configure more properties.
@@ -279,23 +277,23 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 		if event.GetLogMessage().GetAppId() != "" {
 			if checkIfPublishIsPossible(event.GetLogMessage().GetAppId()) && checkIfSourceTypeIsValid(event.GetLogMessage().GetSourceType()) {
 				protb := &autoscaler.ProtoLogMessage{
-					Timestamp:		event.GetLogMessage().GetTimestamp() / 1000 / 1000,
-					LogMessage:		string(event.GetLogMessage().GetMessage()[:]),
-					LogMessageType:	event.GetLogMessage().GetMessageType().String(),
-					SourceType:		event.GetLogMessage().GetSourceType(),
-					AppId:			event.GetLogMessage().GetAppId(),
-					AppName:		getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["applicationName"].(string),
-					Space:			getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["space"].(string),
-					Organization:	getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization"].(string),
+					Timestamp:      event.GetLogMessage().GetTimestamp() / 1000 / 1000,
+					LogMessage:     string(event.GetLogMessage().GetMessage()[:]),
+					LogMessageType: event.GetLogMessage().GetMessageType().String(),
+					SourceType:     event.GetLogMessage().GetSourceType(),
+					AppId:          event.GetLogMessage().GetAppId(),
+					AppName:        getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["applicationName"].(string),
+					Space:          getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["space"].(string),
+					Organization:   getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization"].(string),
 				}
-				
+
 				out, _ := proto.Marshal(protb)
 				var encoder sarama.ByteEncoder = out
-				
+
 				kp.Stats.Inc(stats.Consume)
 				kp.Input() <- &sarama.ProducerMessage{
-					Topic:    "log_messages",
-					Value:	  encoder,
+					Topic: "log_messages",
+					Value: encoder,
 				}
 			}
 		}
@@ -312,13 +310,13 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_Error:
 		// Do nothing
 	case events.Envelope_ContainerMetric:
-		if event.GetContainerMetric().GetApplicationId() != "" && checkIfPublishIsPossible(event.GetContainerMetric().GetApplicationId()){
+		if event.GetContainerMetric().GetApplicationId() != "" && checkIfPublishIsPossible(event.GetContainerMetric().GetApplicationId()) {
 			protb := &autoscaler.ProtoContainerMetric{
 				Timestamp:     event.GetTimestamp() / 1000 / 1000, //convert to ms
 				MetricName:    "InstanceContainerMetric",
 				AppId:         event.GetContainerMetric().GetApplicationId(),
-				AppName:	   getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["applicationName"].(string),
-				Space:		   getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["space"].(string),
+				AppName:       getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["applicationName"].(string),
+				Space:         getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["space"].(string),
 				Cpu:           int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
 				Ram:           int64(event.GetContainerMetric().GetMemoryBytes()),
 				InstanceIndex: event.GetContainerMetric().GetInstanceIndex(),
@@ -354,7 +352,7 @@ func checkIfPublishIsPossible(appId string) bool {
 	if getAppEnvironmentAsJson(appId)["subscribed"] == true {
 		return true
 	}
-	
+
 	return false
 }
 
