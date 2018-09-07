@@ -18,11 +18,8 @@ import (
 	jsonEncoder "github.com/evoila/osb-autoscaler-kafka-nozzle/encoder"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
-	"github.com/go-redis/redis"
 	"github.com/gogo/protobuf/proto"
 )
-
-var goRedisClient = redis.NewClusterClient(&redis.ClusterOptions{})
 
 const (
 	// TopicAppLogTmpl is Kafka topic name template for LogMessage
@@ -46,7 +43,8 @@ const (
 )
 
 func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Config) (NozzleProducer, error) {
-	goRedisClient = redisClient.NewRedisClient(config)
+
+	redisClient.CheckIfCluster(config)
 
 	// Setup kafka async producer (We must use sync producer)
 	// TODO (tcnksm): Enable to configure more properties.
@@ -216,7 +214,7 @@ func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Env
 	}()
 
 	kp.Logger.Printf("[INFO] Start to sub input (buffer for sarama input)")
-	
+
 	go func() {
 		for msg := range kp.subInputCh {
 			kp.Input() <- msg
@@ -250,9 +248,9 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_HttpStart:
 		// Do nothing
 	case events.Envelope_HttpStartStop:
-		if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 && 
+		if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 &&
 			checkIfPublishIsPossible(uuidToString(event.GetHttpStartStop().GetApplicationId())) {
-			
+
 			latency := event.GetHttpStartStop().GetStopTimestamp() - event.GetHttpStartStop().GetStartTimestamp()
 			protb := &autoscaler.ProtoHttpMetric{
 				Timestamp:   event.GetTimestamp() / 1000 / 1000, //convert to ms
@@ -266,7 +264,7 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 			var encoder sarama.ByteEncoder = out
 
 			kp.Stats.Inc(stats.Consume)
-			kp.Input() <- &sarama.ProducerMessage {
+			kp.Input() <- &sarama.ProducerMessage{
 				Topic: "metric_http",
 				Value: encoder,
 			}
@@ -340,13 +338,13 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 
 func getAppEnvironmentAsJson(appId string) map[string]interface{} {
 	var data map[string]interface{}
-	json.Unmarshal([]byte(goRedisClient.Get(appId).Val()), &data)
+	json.Unmarshal([]byte(redisClient.Get(appId)), &data)
 	return data
 }
 
 func checkIfPublishIsPossible(appId string) bool {
-	if goRedisClient.Get(appId).Val() == "" {
-		goRedisClient.Set(appId, "{\"subscribed\":false}", 0)
+	if redisClient.Get(appId) == "" {
+		redisClient.Set(appId, "{\"subscribed\":false}", 0)
 	}
 
 	if getAppEnvironmentAsJson(appId)["subscribed"] == true {
