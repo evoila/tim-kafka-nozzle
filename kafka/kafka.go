@@ -283,6 +283,7 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 					AppName:        getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["applicationName"].(string),
 					Space:          getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["space"].(string),
 					Organization:   getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization"].(string),
+					SourceInstance: event.GetLogMessage().GetSourceInstance(),
 				}
 
 				out, _ := proto.Marshal(protb)
