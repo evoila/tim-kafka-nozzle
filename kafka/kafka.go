@@ -275,15 +275,16 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 		if event.GetLogMessage().GetAppId() != "" {
 			if checkIfPublishIsPossible(event.GetLogMessage().GetAppId()) && checkIfSourceTypeIsValid(event.GetLogMessage().GetSourceType()) {
 				protb := &autoscaler.ProtoLogMessage{
-					Timestamp:      event.GetLogMessage().GetTimestamp() / 1000 / 1000,
-					LogMessage:     string(event.GetLogMessage().GetMessage()[:]),
-					LogMessageType: event.GetLogMessage().GetMessageType().String(),
-					SourceType:     event.GetLogMessage().GetSourceType(),
-					AppId:          event.GetLogMessage().GetAppId(),
-					AppName:        getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["applicationName"].(string),
-					Space:          getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["space"].(string),
-					Organization:   getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization"].(string),
-					SourceInstance: event.GetLogMessage().GetSourceInstance(),
+					Timestamp:        event.GetLogMessage().GetTimestamp() / 1000 / 1000,
+					LogMessage:       string(event.GetLogMessage().GetMessage()[:]),
+					LogMessageType:   event.GetLogMessage().GetMessageType().String(),
+					SourceType:       event.GetLogMessage().GetSourceType(),
+					AppId:            event.GetLogMessage().GetAppId(),
+					AppName:          getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["applicationName"].(string),
+					Space:            getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["space"].(string),
+					Organization:     getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization"].(string),
+					OrganizationGuid: getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization_guid"].(string),
+					SourceInstance:   event.GetLogMessage().GetSourceInstance(),
 				}
 
 				out, _ := proto.Marshal(protb)
@@ -311,15 +312,16 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_ContainerMetric:
 		if event.GetContainerMetric().GetApplicationId() != "" && checkIfPublishIsPossible(event.GetContainerMetric().GetApplicationId()) {
 			protb := &autoscaler.ProtoContainerMetric{
-				Timestamp:     event.GetTimestamp() / 1000 / 1000, //convert to ms
-				MetricName:    "InstanceContainerMetric",
-				AppId:         event.GetContainerMetric().GetApplicationId(),
-				AppName:       getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["applicationName"].(string),
-				Space:         getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["space"].(string),
-				Cpu:           int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
-				Ram:           int64(event.GetContainerMetric().GetMemoryBytes()),
-				InstanceIndex: event.GetContainerMetric().GetInstanceIndex(),
-				Description:   "",
+				Timestamp:        event.GetTimestamp() / 1000 / 1000, //convert to ms
+				MetricName:       "InstanceContainerMetric",
+				AppId:            event.GetContainerMetric().GetApplicationId(),
+				AppName:          getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["applicationName"].(string),
+				Space:            getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["space"].(string),
+				OrganizationGuid: getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["organization_guid"].(string),
+				Cpu:              int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
+				Ram:              int64(event.GetContainerMetric().GetMemoryBytes()),
+				InstanceIndex:    event.GetContainerMetric().GetInstanceIndex(),
+				Description:      "",
 			}
 			out, _ := proto.Marshal(protb)
 			var encoder sarama.ByteEncoder = out
