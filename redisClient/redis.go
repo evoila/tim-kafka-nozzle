@@ -19,6 +19,7 @@ func NewRedisSingleNodeClient(config *config.Config) *redis.Client {
 	var goRedisSingleNodeClient = redis.NewClient(&redis.Options{
 		Addr:     config.GoRedisClient.Addrs[0],
 		Password: config.GoRedisClient.Password,
+		DB: 	  config.GoRedisClient.DB,
 	})
 
 	_, err := goRedisSingleNodeClient.Ping().Result()

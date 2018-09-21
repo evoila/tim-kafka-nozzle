@@ -35,6 +35,7 @@ type GoRedisClient struct {
 	Addrs    []string `env:"REDIS_HOSTS"`
 	Port     string   `env:"REDIS_PORT"`
 	Password string   `env:"REDIS_PASSWORD"`
+	DB       int      `env:"REDIS_DB"`
 }
 
 // Kafka holds Kafka related configuration

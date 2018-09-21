@@ -17,6 +17,7 @@ applications:
     REDIS_HOSTS: <redis_hosts> 
     REDIS_PORT: <redis_port>
     REDIS_PASSWORD: <redis_password>
+    REDIS_DB: <redis_database>
     KAFKA_HOSTS: <kafka_hosts> 
     KAFKA_PORT: <kafka_port>
     KAFKA_RETRY_MAX: <kafka_retry_max> 

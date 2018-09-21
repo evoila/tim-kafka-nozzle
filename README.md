@@ -72,7 +72,8 @@ CF_USERNAME:                Cloud Foundry username
 CF_PASSWORD:                Cloud Foundry password
 REDIS_HOSTS:                Redis hosts # comma seperated list
 REDIS_PORT:                 Redis port
-REDIS_PASSWORD:             Redis pasword
+REDIS_PASSWORD:             Redis password
+REDIS_DATABASE:             Number of the Redis db
 KAFKA_HOSTS:                Kafka hosts # comma seperated list
 KAFKA_PORT:                 Kafka port
 KAFKA_RETRY_MAX:            Max attempts to connect to kafka # integer
