@@ -226,6 +226,7 @@ func (cli *CLI) Run(args []string) int {
 	if config.Kafka.Brokers != nil {
 
 		for i := range config.Kafka.Brokers {
+			config.Kafka.Brokers[i] = strings.Trim(config.Kafka.Brokers[i], "\"[]")
 			config.Kafka.Brokers[i] += ":"
 			config.Kafka.Brokers[i] += config.Kafka.Port
 		}
@@ -236,6 +237,7 @@ func (cli *CLI) Run(args []string) int {
 	if config.GoRedisClient.Addrs != nil {
 
 		for i := range config.GoRedisClient.Addrs {
+			config.GoRedisClient.Addrs[i] = strings.Trim(config.GoRedisClient.Addrs[i], "\"[]")
 			config.GoRedisClient.Addrs[i] += ":"
 			config.GoRedisClient.Addrs[i] += config.GoRedisClient.Port
 		}
