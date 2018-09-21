@@ -71,7 +71,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	env.Parse(&kafka)
 
-	config := &Config{
+	config := Config{
 		CF:            cf,
 		Kafka:         kafka,
 		GoRedisClient: goredisclient,
@@ -79,5 +79,5 @@ func LoadConfig(path string) (*Config, error) {
 
 	env.Parse(&config)
 
-	return config, nil
+	return &config, nil
 }
