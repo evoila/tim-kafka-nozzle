@@ -34,6 +34,7 @@ func NewRedisClusterClient(config *config.Config) *redis.ClusterClient {
 	var goRedisClusterClient = redis.NewClusterClient(&redis.ClusterOptions{
 		Addrs:    config.GoRedisClient.Addrs,
 		Password: config.GoRedisClient.Password,
+		DB: 	  config.GoRedisClient.DB,
 	})
 
 	_, err := goRedisClusterClient.Ping().Result()

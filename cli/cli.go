@@ -241,6 +241,7 @@ func (cli *CLI) Run(args []string) int {
 		}
 
 		logger.Printf("[INFO] Redis Cluster %v", config.GoRedisClient.Addrs)
+		logger.Printf("[INFO] Redis DB %d", config.GoRedisClient.DB)
 	}
 
 	// Setup nozzle producer
