@@ -11,6 +11,7 @@ type Config struct {
 	CF                    CF
 	Kafka                 Kafka
 	GoRedisClient         GoRedisClient
+	GoCfClient            GoCfClient
 }
 
 // CF holds CloudFoundry related configuration.
@@ -38,11 +39,18 @@ type GoRedisClient struct {
 	DB       int      `env:"REDIS_DB"`
 }
 
+type GoCfClient struct {
+	Api      string `env:"GO_CF_API"`
+	Username string `env:"GO_CF_USERNAME"`
+	Password string `env:"GO_CF_PASSWORD"`
+}
+
 // Kafka holds Kafka related configuration
 type Kafka struct {
-	Brokers []string `env:"KAFKA_HOSTS"`
-	Port    string   `env:"KAFKA_PORT"`
-	Topic   Topic
+	Brokers       []string `env:"KAFKA_HOSTS"`
+	Port          string   `env:"KAFKA_PORT"`
+	BindingsTopic string   `env:"KAFKA_BINDINGS_TOPIC"`
+	Topic         Topic
 
 	RetryMax       int `env:"KAFKA_RETRY_MAX"`
 	RetryBackoff   int `env:"KAFKA_RETRY_BACKOFF_MS"`
@@ -64,6 +72,9 @@ func LoadConfig(path string) (*Config, error) {
 	goredisclient := GoRedisClient{}
 	env.Parse(&goredisclient)
 
+	gocfclient := GoCfClient{}
+	env.Parse(&gocfclient)
+
 	topic := Topic{}
 	env.Parse(&topic)
 
@@ -76,6 +87,7 @@ func LoadConfig(path string) (*Config, error) {
 		CF:            cf,
 		Kafka:         kafka,
 		GoRedisClient: goredisclient,
+		GoCfClient:    gocfclient,
 	}
 
 	env.Parse(&config)

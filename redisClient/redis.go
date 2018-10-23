@@ -19,7 +19,7 @@ func NewRedisSingleNodeClient(config *config.Config) *redis.Client {
 	var goRedisSingleNodeClient = redis.NewClient(&redis.Options{
 		Addr:     config.GoRedisClient.Addrs[0],
 		Password: config.GoRedisClient.Password,
-		DB: 	  config.GoRedisClient.DB,
+		DB:       config.GoRedisClient.DB,
 	})
 
 	_, err := goRedisSingleNodeClient.Ping().Result()
@@ -69,5 +69,13 @@ func Get(key string) string {
 		return goRedisClusterClient.Get(key).Val()
 	} else {
 		return goRedisSingleNodeClient.Get(key).Val()
+	}
+}
+
+func Delete(key string) {
+	if isCluster {
+		goRedisClusterClient.Del(key)
+	} else {
+		goRedisSingleNodeClient.Del(key)
 	}
 }

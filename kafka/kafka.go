@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -12,8 +14,10 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/Shopify/sarama"
+	cluster "github.com/bsm/sarama-cluster"
 	"github.com/cloudfoundry/sonde-go/events"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/autoscaler"
+	"github.com/evoila/osb-autoscaler-kafka-nozzle/cf"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
 	jsonEncoder "github.com/evoila/osb-autoscaler-kafka-nozzle/encoder"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
@@ -42,10 +46,39 @@ const (
 	DefaultSubInputBufferSize = 1024
 )
 
+func NewKafkaConsumer(config *config.Config) (*cluster.Consumer, error) {
+	consumerConfig := cluster.NewConfig()
+
+	// This is the default, but Errors are required for repartitioning
+	consumerConfig.Consumer.Return.Errors = true
+
+	consumerConfig.Consumer.Retry.Backoff = DefaultKafkaRetryBackoff
+	if config.Kafka.RetryBackoff != 0 {
+		backoff := time.Duration(config.Kafka.RetryBackoff) * time.Millisecond
+		consumerConfig.Consumer.Retry.Backoff = backoff
+	}
+
+	consumerConfig.ChannelBufferSize = DefaultChannelBufferSize
+
+	consumerConfig.Consumer.Fetch.Default = 100000
+
+	brokers := config.Kafka.Brokers
+	if len(brokers) < 1 {
+		return nil, fmt.Errorf("brokers are not provided")
+	}
+
+	topics := []string{config.Kafka.BindingsTopic}
+
+	consumer, err := cluster.NewConsumer(brokers, "bindings-consumer", topics, consumerConfig)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kafka consumer")
+	} else {
+		return consumer, nil
+	}
+}
+
 func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Config) (NozzleProducer, error) {
-
-	redisClient.CheckIfCluster(config)
-
 	// Setup kafka async producer (We must use sync producer)
 	// TODO (tcnksm): Enable to configure more properties.
 	producerConfig := sarama.NewConfig()
@@ -159,6 +192,74 @@ func (kp *KafkaProducer) ValueMetricTopic() string {
 
 func (kp *KafkaProducer) Errors() <-chan *sarama.ProducerError {
 	return kp.errors
+}
+
+func Consume(ctx context.Context, messageCh <-chan *sarama.ConsumerMessage) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
+
+ConsumerLoop:
+	for {
+		select {
+		case message := <-messageCh:
+			DecodeMessage(message)
+		case <-signals:
+			break ConsumerLoop
+		}
+	}
+}
+
+func DecodeMessage(consumerMessage *sarama.ConsumerMessage) {
+	if consumerMessage.Value != nil {
+		var data map[string]string
+		json.Unmarshal(consumerMessage.Value, &data)
+
+		if data["appId"] != "" {
+			if data["action"] == "bind" {
+				Bind(data)
+			} else {
+				Unbind(data)
+			}
+		}
+	}
+}
+
+func Bind(data map[string]string) {
+	redisEntry := getAppEnvironmentAsJson(data["appId"])
+
+	if redisEntry["subscribed"] == true {
+		UpdateBinding(data, redisEntry)
+	} else {
+		environmentAsJson := cf.CreateEnvironmentJson(data["appId"], data["source"])
+		fmt.Println(data["appId"])
+		fmt.Println(environmentAsJson)
+		redisClient.Set(data["appId"], environmentAsJson, 0)
+	}
+}
+
+func Unbind(data map[string]string) {
+	redisEntry := getAppEnvironmentAsJson(data["appId"])
+
+	if redisEntry["logMetric"] == true && redisEntry["autoscaler"] == true {
+		UpdateBinding(data, redisEntry)
+	} else {
+		redisClient.Delete(data["appId"])
+	}
+}
+
+func UpdateBinding(data map[string]string, redisEntry map[string]interface{}) {
+	if data["action"] == "bind" {
+		redisEntry[data["source"]] = true
+	} else {
+		redisEntry[data["source"]] = false
+	}
+
+	tmp, err := json.Marshal(redisEntry)
+
+	if err == nil {
+		environmentAsJson := string(tmp)
+		redisClient.Set(data["appId"], environmentAsJson, 0)
+	}
 }
 
 // Produce produces event to kafka

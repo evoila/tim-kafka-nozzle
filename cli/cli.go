@@ -13,8 +13,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/evoila/osb-autoscaler-kafka-nozzle/cf"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/kafka"
+	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
 	statsServer "github.com/evoila/osb-autoscaler-kafka-nozzle/server"
 	stats "github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
 	"github.com/hashicorp/logutils"
@@ -246,6 +248,13 @@ func (cli *CLI) Run(args []string) int {
 		logger.Printf("[INFO] Redis DB %d", config.GoRedisClient.DB)
 	}
 
+	//Setup kafka consumer
+	consumer, err := kafka.NewKafkaConsumer(config)
+	if err != nil {
+		logger.Printf("[ERROR] Failed to construct kafka consumer: %s", err)
+		return ExitCodeError
+	}
+
 	// Setup nozzle producer
 	var producer kafka.NozzleProducer
 	if debug {
@@ -359,6 +368,20 @@ func (cli *CLI) Run(args []string) int {
 		<-signalCh
 		logger.Println("[INFO] Interrupt Received: cancel all producers")
 		cancel()
+	}()
+
+	// Create Redis client
+	logger.Printf("[INFO] Start Redis Client for host %v", config.GoRedisClient.Addrs)
+	redisClient.CheckIfCluster(config)
+
+	// Create a cf client
+	cf.NewCfClient(config)
+	logger.Printf("[INFO] Start Cloud Foundry Client for host %d", config.GoCfClient.Api)
+
+	// Start kafka consumer
+	logger.Println("[INFO] Start kafka consumer process")
+	go func() {
+		kafka.Consume(ctx, consumer.Messages())
 	}()
 
 	// Start multiple produce worker processes.
