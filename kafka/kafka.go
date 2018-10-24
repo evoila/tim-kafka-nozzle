@@ -194,7 +194,7 @@ func (kp *KafkaProducer) Errors() <-chan *sarama.ProducerError {
 	return kp.errors
 }
 
-func Consume(ctx context.Context, messageCh <-chan *sarama.ConsumerMessage) {
+func Consume(ctx context.Context, messageCh <-chan *sarama.ConsumerMessage, logger *log.Logger) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 
@@ -202,17 +202,19 @@ ConsumerLoop:
 	for {
 		select {
 		case message := <-messageCh:
-			DecodeMessage(message)
+			DecodeMessage(message, logger)
 		case <-signals:
 			break ConsumerLoop
 		}
 	}
 }
 
-func DecodeMessage(consumerMessage *sarama.ConsumerMessage) {
+func DecodeMessage(consumerMessage *sarama.ConsumerMessage, logger *log.Logger) {
 	if consumerMessage.Value != nil {
 		var data map[string]string
 		json.Unmarshal(consumerMessage.Value, &data)
+
+		logger.Printf("[INFO] Received binding for application with id = %s, collection data...", data["appId"])
 
 		if data["appId"] != "" {
 			if data["action"] == "bind" {
@@ -231,8 +233,6 @@ func Bind(data map[string]string) {
 		UpdateBinding(data, redisEntry)
 	} else {
 		environmentAsJson := cf.CreateEnvironmentJson(data["appId"], data["source"])
-		fmt.Println(data["appId"])
-		fmt.Println(environmentAsJson)
 		redisClient.Set(data["appId"], environmentAsJson, 0)
 	}
 }

@@ -376,12 +376,12 @@ func (cli *CLI) Run(args []string) int {
 
 	// Create a cf client
 	cf.NewCfClient(config)
-	logger.Printf("[INFO] Start Cloud Foundry Client for host %d", config.GoCfClient.Api)
+	logger.Printf("[INFO] Start Cloud Foundry Client for host %s", config.GoCfClient.Api)
 
 	// Start kafka consumer
 	logger.Println("[INFO] Start kafka consumer process")
 	go func() {
-		kafka.Consume(ctx, consumer.Messages())
+		kafka.Consume(ctx, consumer.Messages(), logger)
 	}()
 
 	// Start multiple produce worker processes.
