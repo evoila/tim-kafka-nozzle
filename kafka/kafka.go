@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
-
 	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/cloudfoundry/sonde-go/events"
@@ -23,6 +21,7 @@ import (
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
 	"github.com/gogo/protobuf/proto"
+	"golang.org/x/net/context"
 )
 
 const (
@@ -217,10 +216,12 @@ func DecodeMessage(consumerMessage *sarama.ConsumerMessage, logger *log.Logger) 
 		logger.Printf("[INFO] Received binding for application with id = %s, collection data...", data["appId"])
 
 		if data["appId"] != "" {
-			if data["action"] == "bind" {
+			if data["action"] == "bind" || data["action"] == "load" {
 				Bind(data)
-			} else {
+			} else if data["action"] == "unbind" {
 				Unbind(data)
+			} else {
+				logger.Printf("[ERROR] Unknown action in a binding message for id = %s : %s", data["appId"], data["action"])
 			}
 		}
 	}
@@ -248,7 +249,7 @@ func Unbind(data map[string]string) {
 }
 
 func UpdateBinding(data map[string]string, redisEntry map[string]interface{}) {
-	if data["action"] == "bind" {
+	if data["action"] == "bind" || data["action"] == "load" {
 		redisEntry[data["source"]] = true
 	} else {
 		redisEntry[data["source"]] = false
