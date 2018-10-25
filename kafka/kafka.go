@@ -17,7 +17,6 @@ import (
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/autoscaler"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/cf"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
-	jsonEncoder "github.com/evoila/osb-autoscaler-kafka-nozzle/encoder"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
 	"github.com/gogo/protobuf/proto"
@@ -427,16 +426,22 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 			}
 			out, _ := proto.Marshal(protb)
 			var encoder sarama.ByteEncoder = out
-
 			kp.Stats.Inc(stats.Consume)
-			kp.Input() <- &sarama.ProducerMessage{
-				Topic: "containerMetricAsJSON",
-				Value: &jsonEncoder.JSONEncoder{Event: event},
+
+			if checkIfAutoscalerIsBound(event.GetContainerMetric().GetApplicationId()) {
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic: "autoscaler_metric_container",
+					Value: encoder,
+				}
 			}
-			kp.Input() <- &sarama.ProducerMessage{
-				Topic: "metric_container",
-				Value: encoder,
+
+			if checkIfLogMetricIsBound(event.GetContainerMetric().GetApplicationId()) {
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic: "logMetric_metric_container",
+					Value: encoder,
+				}
 			}
+
 		}
 	}
 }
@@ -450,21 +455,22 @@ func getAppEnvironmentAsJson(appId string) map[string]interface{} {
 func checkIfPublishIsPossible(appId string) bool {
 	if redisClient.Get(appId) == "" {
 		redisClient.Set(appId, "{\"subscribed\":false}", 0)
+		return false
 	}
 
-	if getAppEnvironmentAsJson(appId)["subscribed"] == true {
-		return true
-	}
+	return getAppEnvironmentAsJson(appId)["subscribed"].(bool)
+}
 
-	return false
+func checkIfAutoscalerIsBound(appId string) bool {
+	return redisClient.Get(appId) != "" && (getAppEnvironmentAsJson(appId)["autoscaler"].(bool))
+}
+
+func checkIfLogMetricIsBound(appId string) bool {
+	return redisClient.Get(appId) != "" && (getAppEnvironmentAsJson(appId)["logMetric"].(bool))
 }
 
 func checkIfSourceTypeIsValid(sourceType string) bool {
-	if sourceType == "RTR" || sourceType == "STG" || sourceType == "APP/PROC/WEB" {
-		return true
-	}
-
-	return false
+	return sourceType == "RTR" || sourceType == "STG" || sourceType == "APP/PROC/WEB"
 }
 
 func uuidToString(uuid *events.UUID) string {
