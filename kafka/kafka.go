@@ -373,18 +373,20 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_HttpStop:
 		// Do nothing
 	case events.Envelope_LogMessage:
-		if event.GetLogMessage().GetAppId() != "" {
-			if checkIfPublishIsPossible(event.GetLogMessage().GetAppId()) && checkIfSourceTypeIsValid(event.GetLogMessage().GetSourceType()) {
+		var appId string = event.GetLogMessage().GetAppId()
+		if appId != "" {
+			redisEntry := getAppEnvironmentAsJson(appId)
+			if checkIfPublishIsPossible(appId) && checkIfSourceTypeIsValid(event.GetLogMessage().GetSourceType()) {
 				protb := &autoscaler.ProtoLogMessage{
 					Timestamp:        event.GetLogMessage().GetTimestamp() / 1000 / 1000,
 					LogMessage:       string(event.GetLogMessage().GetMessage()[:]),
 					LogMessageType:   event.GetLogMessage().GetMessageType().String(),
 					SourceType:       event.GetLogMessage().GetSourceType(),
 					AppId:            event.GetLogMessage().GetAppId(),
-					AppName:          getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["applicationName"].(string),
-					Space:            getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["space"].(string),
-					Organization:     getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization"].(string),
-					OrganizationGuid: getAppEnvironmentAsJson(event.GetLogMessage().GetAppId())["organization_guid"].(string),
+					AppName:          redisEntry["applicationName"].(string),
+					Space:            redisEntry["space"].(string),
+					Organization:     redisEntry["organization"].(string),
+					OrganizationGuid: redisEntry["organization_guid"].(string),
 					SourceInstance:   event.GetLogMessage().GetSourceInstance(),
 				}
 
