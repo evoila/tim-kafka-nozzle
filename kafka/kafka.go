@@ -411,37 +411,42 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 	case events.Envelope_Error:
 		// Do nothing
 	case events.Envelope_ContainerMetric:
-		if event.GetContainerMetric().GetApplicationId() != "" && checkIfPublishIsPossible(event.GetContainerMetric().GetApplicationId()) {
-			protb := &autoscaler.ProtoContainerMetric{
-				Timestamp:        event.GetTimestamp() / 1000 / 1000, //convert to ms
-				MetricName:       "InstanceContainerMetric",
-				AppId:            event.GetContainerMetric().GetApplicationId(),
-				AppName:          getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["applicationName"].(string),
-				Space:            getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["space"].(string),
-				OrganizationGuid: getAppEnvironmentAsJson(event.GetContainerMetric().GetApplicationId())["organization_guid"].(string),
-				Cpu:              int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
-				Ram:              int64(event.GetContainerMetric().GetMemoryBytes()),
-				InstanceIndex:    event.GetContainerMetric().GetInstanceIndex(),
-				Description:      "",
-			}
-			out, _ := proto.Marshal(protb)
-			var encoder sarama.ByteEncoder = out
-			kp.Stats.Inc(stats.Consume)
+		var appId string = event.GetContainerMetric().GetApplicationId()
+		if appId != "" {
 
-			if checkIfAutoscalerIsBound(event.GetContainerMetric().GetApplicationId()) {
-				kp.Input() <- &sarama.ProducerMessage{
-					Topic: "autoscaler_metric_container",
-					Value: encoder,
+			redisEntry := getAppEnvironmentAsJson(appId)
+			if checkIfPublishIsPossibleWithoutRequest(appId, redisEntry) {
+
+				protb := &autoscaler.ProtoContainerMetric{
+					Timestamp:        event.GetTimestamp() / 1000 / 1000, //convert to ms
+					MetricName:       "InstanceContainerMetric",
+					AppId:            appId,
+					AppName:          redisEntry["applicationName"].(string),
+					Space:            redisEntry["space"].(string),
+					OrganizationGuid: redisEntry["organization_guid"].(string),
+					Cpu:              int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
+					Ram:              int64(event.GetContainerMetric().GetMemoryBytes()),
+					InstanceIndex:    event.GetContainerMetric().GetInstanceIndex(),
+					Description:      "",
+				}
+				out, _ := proto.Marshal(protb)
+				var encoder sarama.ByteEncoder = out
+				kp.Stats.Inc(stats.Consume)
+
+				if checkIfAutoscalerIsBound(appId, redisEntry) {
+					kp.Input() <- &sarama.ProducerMessage{
+						Topic: "autoscaler_metric_container",
+						Value: encoder,
+					}
+				}
+
+				if checkIfLogMetricIsBound(appId, redisEntry) {
+					kp.Input() <- &sarama.ProducerMessage{
+						Topic: "logMetric_metric_container",
+						Value: encoder,
+					}
 				}
 			}
-
-			if checkIfLogMetricIsBound(event.GetContainerMetric().GetApplicationId()) {
-				kp.Input() <- &sarama.ProducerMessage{
-					Topic: "logMetric_metric_container",
-					Value: encoder,
-				}
-			}
-
 		}
 	}
 }
@@ -452,6 +457,7 @@ func getAppEnvironmentAsJson(appId string) map[string]interface{} {
 	return data
 }
 
+// This function creates a request to redis
 func checkIfPublishIsPossible(appId string) bool {
 	if redisClient.Get(appId) == "" {
 		redisClient.Set(appId, "{\"subscribed\":false}", 0)
@@ -461,12 +467,22 @@ func checkIfPublishIsPossible(appId string) bool {
 	return getAppEnvironmentAsJson(appId)["subscribed"].(bool)
 }
 
-func checkIfAutoscalerIsBound(appId string) bool {
-	return redisClient.Get(appId) != "" && (getAppEnvironmentAsJson(appId)["autoscaler"].(bool))
+// This function does NOT creates a request to redis, but works with the given map
+// Use the gettAppEnvironmentAsJson(appId) function to get the corresponding map
+func checkIfPublishIsPossibleWithoutRequest(appId string, redisEntry map[string]interface{}) bool {
+	if redisClient.Get(appId) == "" {
+		redisClient.Set(appId, "{\"subscribed\":false}", 0)
+		return false
+	}
+	return redisEntry["subscribed"].(bool)
 }
 
-func checkIfLogMetricIsBound(appId string) bool {
-	return redisClient.Get(appId) != "" && (getAppEnvironmentAsJson(appId)["logMetric"].(bool))
+func checkIfAutoscalerIsBound(appId string, redisEntry map[string]interface{}) bool {
+	return redisClient.Get(appId) != "" && redisEntry["autoscaler"].(bool)
+}
+
+func checkIfLogMetricIsBound(appId string, redisEntry map[string]interface{}) bool {
+	return redisClient.Get(appId) != "" && redisEntry["logMetric"].(bool)
 }
 
 func checkIfSourceTypeIsValid(sourceType string) bool {
