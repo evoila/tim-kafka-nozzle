@@ -467,8 +467,8 @@ func checkIfPublishIsPossible(appId string) bool {
 	return getAppEnvironmentAsJson(appId)["subscribed"].(bool)
 }
 
-// This function does NOT creates a request to redis, but works with the given map
-// Use the gettAppEnvironmentAsJson(appId) function to get the corresponding map
+// This function does NOT creates a request to redis when appId is not empty, but works with the given map
+// Use the getAppEnvironmentAsJson(appId) function to get the corresponding map
 func checkIfPublishIsPossibleWithoutRequest(appId string, redisEntry map[string]interface{}) bool {
 	if redisClient.Get(appId) == "" {
 		redisClient.Set(appId, "{\"subscribed\":false}", 0)
