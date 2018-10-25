@@ -41,14 +41,14 @@ Before using the nozzle, you have to setup a correct environment:
     * `cd osb-autoscaler-kafka-nozzle`
     * `glide update`
 
-Now you are ready to roll.
+Now you are ready to roll. Build the project to get an executable.
 
 ## Usage
 
 Basic usage is,
 
 ```bash
-$ autoscaler-nozzle [options]
+$ osb-autoscaler-kafka-nozzle [options]
 ```
 
 The following are available options,
@@ -78,6 +78,9 @@ KAFKA_HOSTS:                Kafka hosts # comma seperated list
 KAFKA_PORT:                 Kafka port
 KAFKA_RETRY_MAX:            Max attempts to connect to kafka # integer
 KAFKA_RETRY_BACKOFF_MS:     Time to wait before attempting to retry a failed request to a given topic partition # in ms
+GO_CF_API:                  Cloud Foundry API address
+GO_CF_USERNAME:             Cloud Foundry username for API calls
+GO_CF_PASSWORD:             Cloud Foundry password for API calls
 ```
 
 You can find an example manifest.yml file for Cloud Foundry in [example-manifest.yml](example-manifest.yml)

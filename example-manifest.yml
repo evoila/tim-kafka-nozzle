@@ -22,3 +22,6 @@ applications:
     KAFKA_PORT: <kafka_port>
     KAFKA_RETRY_MAX: <kafka_retry_max> 
     KAFKA_RETRY_BACKOFF_MS: <kafka_retry_backoff_ms> 
+    GO_CF_API: <cf_api_address>
+    GO_CF_USERNAME: <cf_username>
+    GO_CF_PASSWORD: <cf_password>
