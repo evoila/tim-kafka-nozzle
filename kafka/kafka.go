@@ -1,9 +1,12 @@
 package kafka
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -19,7 +22,6 @@ import (
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
-	"github.com/gogo/protobuf/proto"
 	"golang.org/x/net/context"
 )
 
@@ -65,11 +67,28 @@ func NewKafkaConsumer(config *config.Config) (*cluster.Consumer, error) {
 		return nil, fmt.Errorf("brokers are not provided")
 	}
 
+	//TLS Config temporary disabled
+
+	/*tlsConfig, err := NewTLSConfig("kafka/security/client.cer.pem", "kafka/security/client.key.pem", "kafka/security/server.cer.pem")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	consumerConfig.Net.TLS.Enable = true
+	consumerConfig.Net.TLS.Config = tlsConfig
+
+	consumerConfig.Net.SASL.Enable = true
+	consumerConfig.Net.SASL.User = "admin"
+	consumerConfig.Net.SASL.Password = "MDVTbq4svBEyyBwpLvus7ZmaAEqsCF"
+	consumerConfig.Net.SASL.Handshake = true*/
+
 	topics := []string{config.Kafka.BindingsTopic}
 
 	consumer, err := cluster.NewConsumer(brokers, "bindings-consumer", topics, consumerConfig)
 
 	if err != nil {
+		log.Println(err)
 		return nil, fmt.Errorf("failed to create kafka consumer")
 	} else {
 		return consumer, nil
@@ -100,6 +119,22 @@ func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Con
 	}
 
 	producerConfig.ChannelBufferSize = DefaultChannelBufferSize
+
+	//TLS Config temporary disabled
+
+	/*tlsConfig, err := NewTLSConfig("kafka/security/client.cer.pem", "kafka/security/client.key.pem", "kafka/security/server.cer.pem")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	producerConfig.Net.TLS.Enable = true
+	producerConfig.Net.TLS.Config = tlsConfig
+
+	producerConfig.Net.SASL.Enable = true
+	producerConfig.Net.SASL.User = "admin"
+	producerConfig.Net.SASL.Password = "MDVTbq4svBEyyBwpLvus7ZmaAEqsCF"
+	producerConfig.Net.SASL.Handshake = true*/
 
 	brokers := config.Kafka.Brokers
 	if len(brokers) < 1 {
@@ -139,6 +174,30 @@ func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Con
 		subInputCh:         subInputCh,
 		errors:             make(chan *sarama.ProducerError),
 	}, nil
+}
+
+func NewTLSConfig(clientCertFile, clientKeyFile, caCertFile string) (*tls.Config, error) {
+	tlsConfig := tls.Config{}
+
+	// Load client cert
+	cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+	if err != nil {
+		return &tlsConfig, err
+	}
+	tlsConfig.Certificates = []tls.Certificate{cert}
+
+	// Load CA cert
+	caCert, err := ioutil.ReadFile(caCertFile)
+	if err != nil {
+		return &tlsConfig, err
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+	tlsConfig.RootCAs = caCertPool
+
+	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.BuildNameToCertificate()
+	return &tlsConfig, err
 }
 
 // KafkaProducer implements NozzleProducer interfaces
@@ -353,7 +412,8 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 			checkIfPublishIsPossible(uuidToString(event.GetHttpStartStop().GetApplicationId())) {
 
 			latency := event.GetHttpStartStop().GetStopTimestamp() - event.GetHttpStartStop().GetStartTimestamp()
-			protb := &autoscaler.ProtoHttpMetric{
+
+			httpMetric := &autoscaler.HttpMetric{
 				Timestamp:   event.GetTimestamp() / 1000 / 1000, //convert to ms
 				MetricName:  "HttpMetric",
 				AppId:       uuidToString(event.GetHttpStartStop().GetApplicationId()),
@@ -361,13 +421,17 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 				Latency:     int32(latency) / 1000 / 1000, //convert to ms
 				Description: "Statuscode: " + strconv.Itoa(int(event.GetHttpStartStop().GetStatusCode())),
 			}
-			out, _ := proto.Marshal(protb)
-			var encoder sarama.ByteEncoder = out
 
-			kp.Stats.Inc(stats.Consume)
-			kp.Input() <- &sarama.ProducerMessage{
-				Topic: "metric_http",
-				Value: encoder,
+			jsonHttpMetric, err := json.Marshal(httpMetric)
+
+			if err == nil {
+				var encoder sarama.ByteEncoder = jsonHttpMetric
+
+				kp.Stats.Inc(stats.Consume)
+				kp.Input() <- &sarama.ProducerMessage{
+					Topic: "metric_http",
+					Value: encoder,
+				}
 			}
 		}
 	case events.Envelope_HttpStop:
@@ -377,7 +441,7 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 		if appId != "" {
 			redisEntry := getAppEnvironmentAsJson(appId)
 			if checkIfPublishIsPossible(appId) && checkIfSourceTypeIsValid(event.GetLogMessage().GetSourceType()) {
-				protb := &autoscaler.ProtoLogMessage{
+				logMessage := &autoscaler.LogMessage{
 					Timestamp:        event.GetLogMessage().GetTimestamp() / 1000 / 1000,
 					LogMessage:       string(event.GetLogMessage().GetMessage()[:]),
 					LogMessageType:   event.GetLogMessage().GetMessageType().String(),
@@ -390,13 +454,16 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 					SourceInstance:   event.GetLogMessage().GetSourceInstance(),
 				}
 
-				out, _ := proto.Marshal(protb)
-				var encoder sarama.ByteEncoder = out
+				jsonLogMessage, err := json.Marshal(logMessage)
 
-				kp.Stats.Inc(stats.Consume)
-				kp.Input() <- &sarama.ProducerMessage{
-					Topic: "log_messages",
-					Value: encoder,
+				if err == nil {
+					var encoder sarama.ByteEncoder = jsonLogMessage
+
+					kp.Stats.Inc(stats.Consume)
+					kp.Input() <- &sarama.ProducerMessage{
+						Topic: "log_messages",
+						Value: encoder,
+					}
 				}
 			}
 		}
@@ -419,7 +486,7 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 			redisEntry := getAppEnvironmentAsJson(appId)
 			if checkIfPublishIsPossibleWithoutRequest(appId, redisEntry) {
 
-				protb := &autoscaler.ProtoContainerMetric{
+				containerMetric := &autoscaler.ContainerMetric{
 					Timestamp:        event.GetTimestamp() / 1000 / 1000, //convert to ms
 					MetricName:       "InstanceContainerMetric",
 					AppId:            appId,
@@ -431,21 +498,25 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 					InstanceIndex:    event.GetContainerMetric().GetInstanceIndex(),
 					Description:      "",
 				}
-				out, _ := proto.Marshal(protb)
-				var encoder sarama.ByteEncoder = out
-				kp.Stats.Inc(stats.Consume)
 
-				if checkIfAutoscalerIsBound(appId, redisEntry) {
-					kp.Input() <- &sarama.ProducerMessage{
-						Topic: "autoscaler_metric_container",
-						Value: encoder,
+				jsonContainerMetric, err := json.Marshal(containerMetric)
+
+				if err == nil {
+					var encoder sarama.ByteEncoder = jsonContainerMetric
+					kp.Stats.Inc(stats.Consume)
+
+					if checkIfAutoscalerIsBound(appId, redisEntry) {
+						kp.Input() <- &sarama.ProducerMessage{
+							Topic: "autoscaler_metric_container",
+							Value: encoder,
+						}
 					}
-				}
 
-				if checkIfLogMetricIsBound(appId, redisEntry) {
-					kp.Input() <- &sarama.ProducerMessage{
-						Topic: "logMetric_metric_container",
-						Value: encoder,
+					if checkIfLogMetricIsBound(appId, redisEntry) {
+						kp.Input() <- &sarama.ProducerMessage{
+							Topic: "logMetric_metric_container",
+							Value: encoder,
+						}
 					}
 				}
 			}
