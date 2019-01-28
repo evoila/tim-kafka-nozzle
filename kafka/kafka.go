@@ -1,22 +1,19 @@
 package kafka
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/Shopify/sarama"
-	cluster "github.com/bsm/sarama-cluster"
 	"github.com/cloudfoundry/sonde-go/events"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/autoscaler"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/cf"
 	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
@@ -42,117 +39,87 @@ const (
 	DefaultKafkaRetryMax       = 1
 	DefaultKafkaRetryBackoff   = 100 * time.Millisecond
 
-	DefaultChannelBufferSize  = 512 // Sarama default is 256
+	DefaultChannelBufferSize  = 512
 	DefaultSubInputBufferSize = 1024
 )
 
-func NewKafkaConsumer(config *config.Config) (*cluster.Consumer, error) {
-	consumerConfig := cluster.NewConfig()
-
-	// This is the default, but Errors are required for repartitioning
-	consumerConfig.Consumer.Return.Errors = true
-
-	consumerConfig.Consumer.Retry.Backoff = DefaultKafkaRetryBackoff
-	if config.Kafka.RetryBackoff != 0 {
-		backoff := time.Duration(config.Kafka.RetryBackoff) * time.Millisecond
-		consumerConfig.Consumer.Retry.Backoff = backoff
-	}
-
-	consumerConfig.ChannelBufferSize = DefaultChannelBufferSize
-
-	consumerConfig.Consumer.Fetch.Default = 100000
-
+func NewKafkaConsumer(config *config.Config) (*kafka.Consumer, error) {
 	brokers := config.Kafka.Brokers
 	if len(brokers) < 1 {
 		return nil, fmt.Errorf("brokers are not provided")
 	}
 
-	//TLS Config temporary disabled
+	topics := []string{config.Kafka.Topic.BindingsTopic}
 
-	/*tlsConfig, err := NewTLSConfig("kafka/security/client.cer.pem", "kafka/security/client.key.pem", "kafka/security/server.cer.pem")
-
-	if err != nil {
-		log.Fatal(err)
+	consumerConfig := kafka.ConfigMap{
+		"bootstrap.servers":           strings.Join(brokers, ", "),
+		"group.id":                    "bindings-consumer",
+		"auto.offset.reset":           "earliest",
+		"retry.backoff.ms":            DefaultKafkaRetryBackoff,
+		"socket.receive.buffer.bytes": DefaultChannelBufferSize,
 	}
 
-	consumerConfig.Net.TLS.Enable = true
-	consumerConfig.Net.TLS.Config = tlsConfig
+	if config.Kafka.Secure {
+		consumerConfig.SetKey("security.protocol", "sasl_ssl")
+		consumerConfig.SetKey("sasl.mechanism", "SCRAM-SHA-256")
+		consumerConfig.SetKey("sasl.username", config.Kafka.SaslUsername)
+		consumerConfig.SetKey("sasl.password", config.Kafka.SaslPassword)
+		consumerConfig.SetKey("ssl.ca.location", os.TempDir()+"/server.cer.pem")
+		consumerConfig.SetKey("ssl.certificate.location", os.TempDir()+"/client.cer.pem")
+		consumerConfig.SetKey("ssl.key.location", os.TempDir()+"/client.key.pem")
+	}
 
-	consumerConfig.Net.SASL.Enable = true
-	consumerConfig.Net.SASL.User = "admin"
-	consumerConfig.Net.SASL.Password = "MDVTbq4svBEyyBwpLvus7ZmaAEqsCF"
-	consumerConfig.Net.SASL.Handshake = true*/
+	if config.Kafka.RetryBackoff != 0 {
+		backoff := time.Duration(config.Kafka.RetryBackoff) * time.Millisecond
+		consumerConfig.SetKey("retry.backoff.ms", backoff)
+	}
 
-	topics := []string{config.Kafka.BindingsTopic}
-
-	consumer, err := cluster.NewConsumer(brokers, "bindings-consumer", topics, consumerConfig)
+	consumer, err := kafka.NewConsumer(&consumerConfig)
 
 	if err != nil {
 		log.Println(err)
 		return nil, fmt.Errorf("failed to create kafka consumer")
 	} else {
+		consumer.SubscribeTopics(topics, nil)
 		return consumer, nil
 	}
 }
 
 func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Config) (NozzleProducer, error) {
-	// Setup kafka async producer (We must use sync producer)
-	// TODO (tcnksm): Enable to configure more properties.
-	producerConfig := sarama.NewConfig()
-
-	producerConfig.Producer.Partitioner = sarama.NewRoundRobinPartitioner
-	producerConfig.Producer.Return.Successes = true
-	producerConfig.Producer.RequiredAcks = sarama.WaitForAll
-
-	// This is the default, but Errors are required for repartitioning
-	producerConfig.Producer.Return.Errors = true
-
-	producerConfig.Producer.Retry.Max = DefaultKafkaRetryMax
-	if config.Kafka.RetryMax != 0 {
-		producerConfig.Producer.Retry.Max = config.Kafka.RetryMax
-	}
-
-	producerConfig.Producer.Retry.Backoff = DefaultKafkaRetryBackoff
-	if config.Kafka.RetryBackoff != 0 {
-		backoff := time.Duration(config.Kafka.RetryBackoff) * time.Millisecond
-		producerConfig.Producer.Retry.Backoff = backoff
-	}
-
-	producerConfig.ChannelBufferSize = DefaultChannelBufferSize
-
-	//TLS Config temporary disabled
-
-	/*tlsConfig, err := NewTLSConfig("kafka/security/client.cer.pem", "kafka/security/client.key.pem", "kafka/security/server.cer.pem")
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	producerConfig.Net.TLS.Enable = true
-	producerConfig.Net.TLS.Config = tlsConfig
-
-	producerConfig.Net.SASL.Enable = true
-	producerConfig.Net.SASL.User = "admin"
-	producerConfig.Net.SASL.Password = "MDVTbq4svBEyyBwpLvus7ZmaAEqsCF"
-	producerConfig.Net.SASL.Handshake = true*/
-
 	brokers := config.Kafka.Brokers
 	if len(brokers) < 1 {
 		return nil, fmt.Errorf("brokers are not provided")
 	}
 
-	asyncProducer, err := sarama.NewAsyncProducer(brokers, producerConfig)
+	producerConfig := kafka.ConfigMap{
+		"bootstrap.servers":             strings.Join(brokers, ", "),
+		"partition.assignment.strategy": "roundrobin",
+		"retries":                       DefaultKafkaRetryMax,
+		"retry.backoff.ms":              DefaultKafkaRetryBackoff,
+	}
+
+	if config.Kafka.Secure {
+		producerConfig.SetKey("security.protocol", "sasl_ssl")
+		producerConfig.SetKey("sasl.mechanism", "SCRAM-SHA-256")
+		producerConfig.SetKey("sasl.username", config.Kafka.SaslUsername)
+		producerConfig.SetKey("sasl.password", config.Kafka.SaslPassword)
+		producerConfig.SetKey("ssl.ca.location", os.TempDir()+"/server.cer.pem")
+		producerConfig.SetKey("ssl.certificate.location", os.TempDir()+"/client.cer.pem")
+		producerConfig.SetKey("ssl.key.location", os.TempDir()+"/client.key.pem")
+	}
+
+	if config.Kafka.RetryMax != 0 {
+		producerConfig.SetKey("retries", config.Kafka.RetryMax)
+	}
+
+	if config.Kafka.RetryBackoff != 0 {
+		backoff := time.Duration(config.Kafka.RetryBackoff) * time.Millisecond
+		producerConfig.SetKey("retry.backoff.ms", backoff)
+	}
+
+	producer, err := kafka.NewProducer(&producerConfig)
 	if err != nil {
 		return nil, err
-	}
-
-	kafkaTopic := config.Kafka.Topic
-	if kafkaTopic.LogMessage == "" {
-		kafkaTopic.LogMessage = DefaultLogMessageTopic
-	}
-
-	if kafkaTopic.ValueMetric == "" {
-		kafkaTopic.ValueMetric = DefaultValueMetricTopic
 	}
 
 	repartitionMax := DefaultKafkaRepartitionMax
@@ -160,63 +127,36 @@ func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Con
 		repartitionMax = config.Kafka.RepartitionMax
 	}
 
-	subInputBuffer := DefaultSubInputBufferSize
-	subInputCh := make(chan *sarama.ProducerMessage, subInputBuffer)
-
 	return &KafkaProducer{
-		AsyncProducer:      asyncProducer,
-		Logger:             logger,
-		Stats:              stats,
-		logMessageTopic:    kafkaTopic.LogMessage,
-		logMessageTopicFmt: kafkaTopic.LogMessageFmt,
-		valueMetricTopic:   kafkaTopic.ValueMetric,
-		repartitionMax:     repartitionMax,
-		subInputCh:         subInputCh,
-		errors:             make(chan *sarama.ProducerError),
+		Producer:                       producer,
+		Logger:                         logger,
+		Stats:                          stats,
+		logMessageTopic:                config.Kafka.Topic.LogMessage,
+		autoscalerContainerMetricTopic: config.Kafka.Topic.AutoscalerContainerMetric,
+		logMetricContainerMetricTopic:  config.Kafka.Topic.LogMetricContainerMetric,
+		httpMetricTopic:                config.Kafka.Topic.HttpMetric,
+		repartitionMax:                 repartitionMax,
+		errors:                         make(chan *kafka.Error),
+		deliveryChan:                   make(chan kafka.Event),
 	}, nil
-}
-
-func NewTLSConfig(clientCertFile, clientKeyFile, caCertFile string) (*tls.Config, error) {
-	tlsConfig := tls.Config{}
-
-	// Load client cert
-	cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
-	if err != nil {
-		return &tlsConfig, err
-	}
-	tlsConfig.Certificates = []tls.Certificate{cert}
-
-	// Load CA cert
-	caCert, err := ioutil.ReadFile(caCertFile)
-	if err != nil {
-		return &tlsConfig, err
-	}
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-	tlsConfig.RootCAs = caCertPool
-
-	tlsConfig.InsecureSkipVerify = true
-	tlsConfig.BuildNameToCertificate()
-	return &tlsConfig, err
 }
 
 // KafkaProducer implements NozzleProducer interfaces
 type KafkaProducer struct {
-	sarama.AsyncProducer
+	*kafka.Producer
 
 	repartitionMax int
-	errors         chan *sarama.ProducerError
+	errors         chan *kafka.Error
 
-	// SubInputCh is buffer for re-partitioning
-	subInputCh chan *sarama.ProducerMessage
-
-	logMessageTopic    string
-	logMessageTopicFmt string
-
-	valueMetricTopic string
+	logMessageTopic                string
+	autoscalerContainerMetricTopic string
+	logMetricContainerMetricTopic  string
+	httpMetricTopic                string
 
 	Logger *log.Logger
 	Stats  *stats.Stats
+
+	deliveryChan chan kafka.Event
 
 	once sync.Once
 }
@@ -235,41 +175,39 @@ func (kp *KafkaProducer) init() {
 	}
 }
 
-func (kp *KafkaProducer) LogMessageTopic(appID string) string {
-	if kp.logMessageTopicFmt != "" {
-		return fmt.Sprintf(kp.logMessageTopicFmt, appID)
-	}
-
-	return kp.logMessageTopic
-}
-
-func (kp *KafkaProducer) ValueMetricTopic() string {
-	return kp.valueMetricTopic
-}
-
-func (kp *KafkaProducer) Errors() <-chan *sarama.ProducerError {
+func (kp *KafkaProducer) Errors() <-chan *kafka.Error {
 	return kp.errors
 }
 
-func Consume(ctx context.Context, messageCh <-chan *sarama.ConsumerMessage, logger *log.Logger) {
+func (kp *KafkaProducer) Successes() <-chan *kafka.Message {
+	msgCh := make(chan *kafka.Message)
+	return msgCh
+}
+
+func Consume(ctx context.Context, consumer *kafka.Consumer, logger *log.Logger) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 
-ConsumerLoop:
 	for {
-		select {
-		case message := <-messageCh:
-			DecodeMessage(message, logger)
-		case <-signals:
-			break ConsumerLoop
+		event := consumer.Poll(100)
+		if event == nil {
+			continue
+		}
+
+		switch e := event.(type) {
+		case *kafka.Message:
+			DecodeMessage(e.Value, logger)
+		case kafka.Error:
+			// Errors should generally be considered as informational, the client will try to automatically recover
+			fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
 		}
 	}
 }
 
-func DecodeMessage(consumerMessage *sarama.ConsumerMessage, logger *log.Logger) {
-	if consumerMessage.Value != nil {
+func DecodeMessage(consumerMessage []byte, logger *log.Logger) {
+	if consumerMessage != nil {
 		var data map[string]string
-		json.Unmarshal(consumerMessage.Value, &data)
+		json.Unmarshal(consumerMessage, &data)
 
 		logger.Printf("[INFO] Received binding for application with id = %s, collection data...", data["appId"])
 
@@ -325,63 +263,7 @@ func UpdateBinding(data map[string]string, redisEntry map[string]interface{}) {
 func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Envelope) {
 	kp.once.Do(kp.init)
 
-	kp.Logger.Printf("[INFO] Start to watching producer error for re-partition")
-	go func() {
-		for producerErr := range kp.AsyncProducer.Errors() {
-			// Instead of giving up, try to resubmit the message so that it can end up
-			// on a different partition (we don't care about order of message)
-			// This is a workaround for https://github.com/Shopify/sarama/issues/514
-			meta, _ := producerErr.Msg.Metadata.(metadata)
-			kp.Logger.Printf("[ERROR] Producer error %+v", producerErr)
-
-			if meta.retries >= kp.repartitionMax {
-				kp.errors <- producerErr
-				continue
-			}
-
-			// NOTE: We need to re-create Message because original message
-			// which producer.Error stores internal state (unexported field)
-			// and it effect partitioning.
-			originalMsg := producerErr.Msg
-			msg := &sarama.ProducerMessage{
-				Topic: originalMsg.Topic,
-				Value: originalMsg.Value,
-
-				// Update retry count
-				Metadata: metadata{
-					retries: meta.retries + 1,
-				},
-			}
-
-			// If sarama buffer is full, then input it to nozzle side buffer
-			// (subInput) and retry to produce it later. When subInput is
-			// full, we drop message.
-			//
-			// TODO(tcnksm): Monitor subInput buffer.
-			select {
-			case kp.Input() <- msg:
-				kp.Logger.Printf("[DEBUG] Repartitioning")
-			default:
-				select {
-				case kp.subInputCh <- msg:
-					kp.Stats.Inc(stats.SubInputBuffer)
-				default:
-					// If subInput is full, then drop message.....
-					kp.errors <- producerErr
-				}
-			}
-		}
-	}()
-
-	kp.Logger.Printf("[INFO] Start to sub input (buffer for sarama input)")
-
-	go func() {
-		for msg := range kp.subInputCh {
-			kp.Input() <- msg
-			kp.Logger.Printf("[DEBUG] Repartitioning (from subInput)")
-			kp.Stats.Dec(stats.SubInputBuffer)
-		}
-	}()
+	kp.Logger.Printf("[INFO] Start to sub input")
 
 	kp.Logger.Printf("[INFO] Start loop to watch events")
 
@@ -425,13 +307,11 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 			jsonHttpMetric, err := json.Marshal(httpMetric)
 
 			if err == nil {
-				var encoder sarama.ByteEncoder = jsonHttpMetric
-
+				kp.Producer.Produce(&kafka.Message{
+					TopicPartition: kafka.TopicPartition{Topic: &kp.httpMetricTopic, Partition: kafka.PartitionAny},
+					Value:          jsonHttpMetric,
+				}, kp.deliveryChan)
 				kp.Stats.Inc(stats.Consume)
-				kp.Input() <- &sarama.ProducerMessage{
-					Topic: "metric_http",
-					Value: encoder,
-				}
 			}
 		}
 	case events.Envelope_HttpStop:
@@ -457,20 +337,17 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 				jsonLogMessage, err := json.Marshal(logMessage)
 
 				if err == nil {
-					var encoder sarama.ByteEncoder = jsonLogMessage
-
+					kp.Producer.Produce(&kafka.Message{
+						TopicPartition: kafka.TopicPartition{Topic: &kp.logMessageTopic, Partition: kafka.PartitionAny},
+						Value:          jsonLogMessage,
+					}, kp.deliveryChan)
 					kp.Stats.Inc(stats.Consume)
-					kp.Input() <- &sarama.ProducerMessage{
-						Topic: "log_messages",
-						Value: encoder,
-					}
 				}
 			}
 		}
 
 	case events.Envelope_ValueMetric:
-		/*kp.Stats.Inc(Consume)
-		kp.Input() <- &sarama.ProducerMessage{
+		/*kp.Input() <- &sarama.ProducerMessage{
 			Topic:    kp.ValueMetricTopic(),
 			Value:    &JsonEncoder{event: event},
 			Metadata: metadata{retries: 0},
@@ -502,25 +379,33 @@ func (kp *KafkaProducer) input(event *events.Envelope) {
 				jsonContainerMetric, err := json.Marshal(containerMetric)
 
 				if err == nil {
-					var encoder sarama.ByteEncoder = jsonContainerMetric
-					kp.Stats.Inc(stats.Consume)
-
 					if checkIfAutoscalerIsBound(appId, redisEntry) {
-						kp.Input() <- &sarama.ProducerMessage{
-							Topic: "autoscaler_metric_container",
-							Value: encoder,
-						}
+						kp.Producer.Produce(&kafka.Message{
+							TopicPartition: kafka.TopicPartition{Topic: &kp.autoscalerContainerMetricTopic, Partition: kafka.PartitionAny},
+							Value:          jsonContainerMetric,
+						}, kp.deliveryChan)
 					}
 
 					if checkIfLogMetricIsBound(appId, redisEntry) {
-						kp.Input() <- &sarama.ProducerMessage{
-							Topic: "logMetric_metric_container",
-							Value: encoder,
-						}
+						kp.Producer.Produce(&kafka.Message{
+							TopicPartition: kafka.TopicPartition{Topic: &kp.logMetricContainerMetricTopic, Partition: kafka.PartitionAny},
+							Value:          jsonContainerMetric,
+						}, kp.deliveryChan)
 					}
+					kp.Stats.Inc(stats.Consume)
 				}
 			}
 		}
+	}
+}
+
+func (kp *KafkaProducer) ReadDeliveryChan() {
+
+	// Only checks if report is received since there are no reports for
+	// failed deliveries
+	for {
+		<-kp.deliveryChan
+		kp.Stats.Inc(stats.Publish)
 	}
 }
 

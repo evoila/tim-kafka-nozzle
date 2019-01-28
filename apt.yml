@@ -1,0 +1,7 @@
+---
+keys:
+- http://packages.confluent.io/deb/5.1/archive.key
+repos:
+- deb [arch=amd64] http://packages.confluent.io/deb/5.1 stable main
+packages:
+- librdkafka-dev

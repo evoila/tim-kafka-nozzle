@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -186,9 +187,13 @@ func (cli *CLI) Run(args []string) int {
 		config.CF.IdleTimeout = int(DefaultIdleTimeout.Seconds())
 	}
 
+	// Create cert files for kafka
+	if config.Kafka.Secure {
+		createCertificateFiles(config, logger)
+	}
+
 	// Initialize stats collector
 	stats := stats.NewStats()
-	go stats.PerSec()
 
 	// Start server.
 	if server {
@@ -233,7 +238,7 @@ func (cli *CLI) Run(args []string) int {
 			config.Kafka.Brokers[i] += config.Kafka.Port
 		}
 
-		logger.Printf("[INFO] Brokers %v", config.Kafka.Brokers)
+		logger.Printf("[INFO] Kafka Brokers %v", config.Kafka.Brokers)
 	}
 
 	if config.GoRedisClient.Addrs != nil {
@@ -268,6 +273,7 @@ func (cli *CLI) Run(args []string) int {
 			logger.Printf("[ERROR] Failed to construct kafka producer: %s", err)
 			return ExitCodeError
 		}
+		go producer.ReadDeliveryChan()
 	}
 
 	// Create a ctx for cancelation signal across the goroutined producers.
@@ -277,18 +283,32 @@ func (cli *CLI) Run(args []string) int {
 	go func() {
 		logger.Printf("[INFO] Stats display interval: %s", statsInterval)
 		ticker := time.NewTicker(statsInterval)
+
+		statsIntervalAsInt := float64(statsInterval) / 1000 / 1000 / 1000 // Convert from nanoseconds to seconds
+		lastConsume, lastPublish := float64(0), float64(0)
+
+		intervalCounter := uint64(0)
+
 		for {
 			select {
 			case <-ticker.C:
-				logger.Printf("[INFO] Consume per sec: %d", stats.ConsumePerSec)
+				intervalCounter++
+
+				stats.ConsumePerSec = (float64(stats.Consume) - lastConsume) / statsIntervalAsInt
+				stats.PublishPerSec = (float64(stats.Publish) - lastPublish) / statsIntervalAsInt
+
+				lastConsume = float64(stats.Consume)
+				lastPublish = float64(stats.Publish)
+
+				logger.Printf("[INFO] ### Current Interval: %d ###", intervalCounter)
+
+				logger.Printf("[INFO] Consume per sec: %.1f", stats.ConsumePerSec)
 				logger.Printf("[INFO] Consumed messages: %d", stats.Consume)
 
-				logger.Printf("[INFO] Publish per sec: %d", stats.PublishPerSec)
+				logger.Printf("[INFO] Publish per sec: %.1f", stats.PublishPerSec)
 				logger.Printf("[INFO] Published messages: %d", stats.Publish)
 
 				logger.Printf("[INFO] Publish delay: %d", stats.Delay)
-
-				logger.Printf("[INFO] SubInput buffer: %d", stats.SubInputBuffer)
 
 				logger.Printf("[INFO] Failed consume: %d", stats.ConsumeFail)
 				logger.Printf("[INFO] Failed publish: %d", stats.PublishFail)
@@ -340,14 +360,6 @@ func (cli *CLI) Run(args []string) int {
 		}
 	}()
 
-	// Now we don't use this. But in future, it hould be used
-	// for monitoring
-	go func() {
-		for _ = range producer.Successes() {
-			stats.Inc(Publish)
-		}
-	}()
-
 	// Handle producer error
 	// TODO(tcnksm): Buffer and restart when it recovers
 	go func() {
@@ -380,8 +392,9 @@ func (cli *CLI) Run(args []string) int {
 
 	// Start kafka consumer
 	logger.Println("[INFO] Start kafka consumer process")
+
 	go func() {
-		kafka.Consume(ctx, consumer.Messages(), logger)
+		kafka.Consume(ctx, consumer, logger)
 	}()
 
 	// Start multiple produce worker processes.
@@ -414,16 +427,39 @@ func (cli *CLI) Run(args []string) int {
 	}
 
 	logger.Printf("[INFO] Closing producer")
-	if err := producer.Close(); err != nil {
-		logger.Printf("[ERROR] Failed to close producer: %s", err)
-		isError = true
-	}
+	producer.Close()
 
 	logger.Printf("[INFO] Finished kafka firehose nozzle")
 	if isError {
 		return ExitCodeError
 	}
 	return ExitCodeOK
+}
+
+func createCertificateFiles(config *config.Config, logger *log.Logger) {
+	// Create file for ca certificate
+	caCertContent := []byte(config.Kafka.SslCa)
+	err := ioutil.WriteFile(os.TempDir()+"server.cer.pem", caCertContent, 0666)
+	if err != nil {
+		log.Fatal("Cannot create ca certificate file", err)
+	}
+	logger.Printf("[INFO] Ca certificate file created: " + os.TempDir() + "server.cer.pem")
+
+	// Create file for client certificate
+	clientCertContent := []byte(config.Kafka.SslCertificate)
+	err = ioutil.WriteFile(os.TempDir()+"client.cer.pem", clientCertContent, 0666)
+	if err != nil {
+		log.Fatal("Cannot create client certificate file", err)
+	}
+	logger.Printf("[INFO] Client certificate file created: " + os.TempDir() + "client.cer.pem")
+
+	// Create file for client key
+	clientKeyContent := []byte(config.Kafka.SslKey)
+	err = ioutil.WriteFile(os.TempDir()+"client.key.pem", clientKeyContent, 0666)
+	if err != nil {
+		log.Fatal("Cannot create client key file", err)
+	}
+	logger.Printf("[INFO] Client key file created: " + os.TempDir() + "client.key.pem")
 }
 
 func godoc() error {

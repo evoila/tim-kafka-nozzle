@@ -47,20 +47,29 @@ type GoCfClient struct {
 
 // Kafka holds Kafka related configuration
 type Kafka struct {
-	Brokers       []string `env:"KAFKA_HOSTS"`
-	Port          string   `env:"KAFKA_PORT"`
-	BindingsTopic string   `env:"KAFKA_BINDINGS_TOPIC"`
-	Topic         Topic
+	Brokers []string `env:"KAFKA_HOSTS"`
+	Port    string   `env:"KAFKA_PORT"`
+	Topic   Topic
 
 	RetryMax       int `env:"KAFKA_RETRY_MAX"`
 	RetryBackoff   int `env:"KAFKA_RETRY_BACKOFF_MS"`
 	RepartitionMax int `env:"KAFKA_REPARTITION_MAX"`
+
+	Secure       bool   `env:"KAFKA_SECURE"`
+	SaslUsername string `env:"KAFKA_SASL_USERNAME"`
+	SaslPassword string `env:"KAFKA_SASL_PASSWORD"`
+
+	SslCa          string `env:"KAFKA_SSL_CA"`
+	SslCertificate string `env:"KAFKA_SSL_CERTIFICATE"`
+	SslKey         string `env:"KAFKA_SSL_KEY"`
 }
 
 type Topic struct {
-	LogMessage    string `env:"KAFKA_TOPIC_LOG_MESSAGE"`
-	LogMessageFmt string `env:"KAFKA_TOPIC_LOG_MESSAGE_FMT"`
-	ValueMetric   string `env:"KAFKA_TOPIC_VALUE_METRIC"`
+	BindingsTopic             string `env:"KAFKA_BINDINGS_TOPIC"`
+	LogMessage                string `env:"KAFKA_TOPIC_LOG_MESSAGE"`
+	AutoscalerContainerMetric string `env:"KAFKA_TOPIC_AUTOSCALER_CONTAINER_METRIC"`
+	LogMetricContainerMetric  string `env:"KAFKA_TOPIC_LOG_METRIC_CONTAINER_METRIC"`
+	HttpMetric                string `env:"KAFKA_TOPIC_HTTP_METRIC"`
 }
 
 // LoadConfig reads configuration file

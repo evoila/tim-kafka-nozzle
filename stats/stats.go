@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"sync/atomic"
-	"time"
 )
 
 const (
@@ -29,12 +28,12 @@ const (
 
 // Stats stores various stats infomation
 type Stats struct {
-	Consume       uint64 `json:"consume"`
-	ConsumePerSec uint64 `json:"consume_per_sec"`
-	ConsumeFail   uint64 `json:"consume_fail"`
+	Consume       uint64  `json:"consume"`
+	ConsumePerSec float64 `json:"consume_per_sec"`
+	ConsumeFail   uint64  `json:"consume_fail"`
 
-	Publish       uint64 `json:"publish"`
-	PublishPerSec uint64 `json:"publish_per_sec"`
+	Publish       uint64  `json:"publish"`
+	PublishPerSec float64 `json:"publish_per_sec"`
 
 	// This is same as the number of dropped message
 	PublishFail uint64 `json:"publish_fail"`
@@ -75,21 +74,6 @@ func NewStats() *Stats {
 func (s *Stats) Json() ([]byte, error) {
 	s.Delay = s.Consume - s.Publish - s.PublishFail
 	return json.Marshal(s)
-}
-
-func (s *Stats) PerSec() {
-	lastConsume, lastPublish := uint64(0), uint64(0)
-	ticker := time.NewTicker(1 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			s.ConsumePerSec = s.Consume - lastConsume
-			s.PublishPerSec = s.Publish - lastPublish
-
-			lastConsume = s.Consume
-			lastPublish = s.Publish
-		}
-	}
 }
 
 func (s *Stats) Inc(statsType StatsType) {

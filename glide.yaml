@@ -45,13 +45,8 @@ import:
   version: fb93926129b8ec0056f2f458b1f519654814edf0
   subpackages:
   - context
-- package: github.com/golang/protobuf
-  version: v1.0.0
-  subpackages:
-  - proto
 - package: github.com/caarlos0/env
   version: v3.3.0
-- package: github.com/Shopify/sarama
-  version: ~1.19.0
 - package: github.com/cloudfoundry-community/go-cfclient
-- package: github.com/bsm/sarama-cluster
+- package: github.com/confluentinc/confluent-kafka-go
+  version: v0.11.6

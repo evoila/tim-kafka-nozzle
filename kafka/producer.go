@@ -6,8 +6,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/Shopify/sarama"
 	"github.com/cloudfoundry/sonde-go/events"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"golang.org/x/net/context"
 )
 
@@ -16,13 +16,15 @@ type NozzleProducer interface {
 	Produce(context.Context, <-chan *events.Envelope)
 
 	// Errors returns error channel
-	Errors() <-chan *sarama.ProducerError
+	Errors() <-chan *kafka.Error
 
 	// Success returns sarama.ProducerMessage
-	Successes() <-chan *sarama.ProducerMessage
+	Successes() <-chan *kafka.Message
 
 	// Close shuts down the producer and flushes any messages it may have buffered.
-	Close() error
+	Close()
+
+	ReadDeliveryChan()
 }
 
 var defaultLogger = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -62,17 +64,20 @@ func (p *LogProducer) Produce(ctx context.Context, eventCh <-chan *events.Envelo
 	}
 }
 
-func (p *LogProducer) Errors() <-chan *sarama.ProducerError {
-	errCh := make(chan *sarama.ProducerError, 1)
+func (p *LogProducer) Errors() <-chan *kafka.Error {
+	errCh := make(chan *kafka.Error, 1)
 	return errCh
 }
 
-func (p *LogProducer) Successes() <-chan *sarama.ProducerMessage {
-	msgCh := make(chan *sarama.ProducerMessage)
+func (p *LogProducer) Successes() <-chan *kafka.Message {
+	msgCh := make(chan *kafka.Message)
 	return msgCh
 }
 
-func (p *LogProducer) Close() error {
+func (p *LogProducer) Close() {
 	// Nothing to close for thi producer
-	return nil
+}
+
+func (p *LogProducer) ReadDeliveryChan() {
+	// Nothing to do here
 }
