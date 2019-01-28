@@ -5,7 +5,7 @@ domain: <domain>
 applications:
 - name: <name>
   host: <host>
-  buildpack: https://github.com/cloudfoundry/go-buildpack.git
+  buildpack: https://github.com/cloudfoundry/multi-buildpack.git
   health-check-type: process
   env: 
     GOPACKAGENAME: main
@@ -18,10 +18,23 @@ applications:
     REDIS_PORT: <redis_port>
     REDIS_PASSWORD: <redis_password>
     REDIS_DB: <redis_database>
+    GO_CF_API: <cf_api_address>
+    GO_CF_USERNAME: <cf_username>
+    GO_CF_PASSWORD: <cf_password> 
     KAFKA_HOSTS: <kafka_hosts> 
     KAFKA_PORT: <kafka_port>
     KAFKA_RETRY_MAX: <kafka_retry_max> 
-    KAFKA_RETRY_BACKOFF_MS: <kafka_retry_backoff_ms> 
-    GO_CF_API: <cf_api_address>
-    GO_CF_USERNAME: <cf_username>
-    GO_CF_PASSWORD: <cf_password>
+    KAFKA_RETRY_BACKOFF_MS: <kafka_retry_backoff_ms>
+    KAFKA_BINDINGS_TOPIC: <kafka_bindings_topic_name>
+    KAFKA_TOPIC_LOG_MESSAGE: <kafka_logmessages_topic_name>
+    KAFKA_TOPIC_AUTOSCALER_CONTAINER_METRIC: <kafka_autoscaler_container_metrics_topic_name>
+    KAFKA_TOPIC_LOG_METRIC_CONTAINER_METRIC: <kafka_logmetric_container_metrics_topic_name>
+    KAFKA_TOPIC_HTTP_METRIC: <kafka_http_metrics_topic_name>
+    #Set to true if kafka is secured
+    KAFKA_SECURE: <is_kafka_secured_flag>
+    # Only set these if kafka is secured
+    KAFKA_SASL_USERNAME: <kafka_sasl_username>
+    KAFKA_SASL_PASSWORD: <kafka_sasl_password>
+    KAFKA_SSL_CA: <kafka_ssl_ca>
+    KAFKA_SSL_CERTIFICATE: <kafka_ssl_certificate>
+    KAFKA_SSL_KEY: <kafka_ssl_key>
