@@ -1,4 +1,4 @@
-package: github.com/evoila/osb-autoscaler-kafka-nozzle
+package: github.com/evoila/tim-kafka-nozzle
 import:
 - package: github.com/BurntSushi/toml
   version: v0.2.0

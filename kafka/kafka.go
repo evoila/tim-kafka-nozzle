@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/tls"
 
 	"github.com/cloudfoundry/sonde-go/events"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -150,64 +151,21 @@ func (kp *KafkaProducer) Produce(ctx context.Context) {
 			return
 
 		default:
-			client := &http.Client{}
-			request, _ := http.NewRequest("GET", "https://kanw92:9090/nwrestapi/v3/global/serverconfig", nil)
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			client := &http.Client{Transport: tr}
+			request, _ := http.NewRequest("GET", "https://kanw92.beast.local:9090/nwrestapi/v3/global/serverconfig", nil)
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Authorization", "Basic cmVzdHVzZXI6Z0RDczBmdHMyMDE1IQ==")
 			response, err := client.Do(request)
 
 			if err != nil {
 				log.Printf("[ERROR] Failed REST call")
-
-				data := `{
-					"acceptNewRecoverSessions": true,
-					"acceptNewSessions": true,
-					"aclPassthrough": true,
-					"administrators": [
-					  "user=root,host=kanw92.beast.local",
-					  "user=administrator,host=kanw92.beast.local",
-					  "user=system,host=kanw92.beast.local",
-					  "user=administrator,host=kamgmt",
-					  "user=administrator,host=kamgmt.beast.local",
-					  "*@*"
-					],
-					"authenticationProxyPort": 7999,
-					"authenticationServiceDatabase": "/nsr/authc/data",
-					"authenticationServicePort": 9090,
-					"clpRefresh": "No",
-					"clpUom": "1",
-					"deviceSharingMode": "MaximalSharing",
-					"disableRpsClone": true,
-					"jobInactivityTimeout": 0,
-					"jobsdbRetentionInHours": 72,
-					"keepIncompleteBackups": false,
-					"manualSaves": true,
-					"name": "kanw92.beast.local",
-					"nasDevicePolicyAllowed": true,
-					"parallelism": 32,
-					"publicArchives": false,
-					"resourceId": {
-					  "id": "3.0.241.60.0.0.0.0.205.38.207.90.172.16.174.95",
-					  "sequence": 22
-					},
-					"saveSessionDistribution": "MaxSessions",
-					"serverOSType": "Linux",
-					"vmwarePolicyAllowed": true,
-					"vmwsEnable": true,
-					"vmwsPort": 8080,
-					"vmwsUserName": "VMUser",
-					"vmwsUserPassword": "*******",
-					"volumePriority": "NearLinePriority",
-					"wormPoolsOnlyHoldWormTapes": true,
-					"wormTapesOnlyInWormPools": true
-				  }`
-
-				kp.input([]byte(data), "server_config")
+				log.Println(err)
 			} else {
-				fmt.Println(response.Status)
 				data, err := ioutil.ReadAll(response.Body)
 				kp.input(data, "server_config")
-				fmt.Println(err)
 			}
 
 			time.Sleep(10 * 1000 * time.Millisecond)
