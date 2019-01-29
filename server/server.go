@@ -9,7 +9,7 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
+	"github.com/evoila/tim-kafka-nozzle/stats"
 	"github.com/fukata/golang-stats-api-handler"
 )
 

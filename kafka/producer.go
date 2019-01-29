@@ -1,19 +1,17 @@
 package kafka
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"log"
 	"sync"
 
-	"github.com/cloudfoundry/sonde-go/events"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"golang.org/x/net/context"
 )
 
 type NozzleProducer interface {
 	// Produce produces firehose events
-	Produce(context.Context, <-chan *events.Envelope)
+	Produce(context.Context)
 
 	// Errors returns error channel
 	Errors() <-chan *kafka.Error
@@ -50,13 +48,13 @@ func (p *LogProducer) init() {
 	}
 }
 
-func (p *LogProducer) Produce(ctx context.Context, eventCh <-chan *events.Envelope) {
+func (p *LogProducer) Produce(ctx context.Context) {
 	p.once.Do(p.init)
 	for {
 		select {
-		case event := <-eventCh:
-			buf, _ := json.Marshal(event)
-			p.Logger.Printf("[INFO] %s", string(buf))
+		/*case event := <-eventCh:
+		buf, _ := json.Marshal(event)
+		p.Logger.Printf("[INFO] %s", string(buf))*/
 		case <-ctx.Done():
 			p.Logger.Printf("[INFO] Stop producer")
 			return

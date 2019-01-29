@@ -14,14 +14,11 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/cf"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/kafka"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
-	statsServer "github.com/evoila/osb-autoscaler-kafka-nozzle/server"
-	stats "github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
+	"github.com/evoila/tim-kafka-nozzle/config"
+	"github.com/evoila/tim-kafka-nozzle/kafka"
+	statsServer "github.com/evoila/tim-kafka-nozzle/server"
+	stats "github.com/evoila/tim-kafka-nozzle/stats"
 	"github.com/hashicorp/logutils"
-	"github.com/rakutentech/go-nozzle"
 	"golang.org/x/net/context"
 )
 
@@ -173,20 +170,6 @@ func (cli *CLI) Run(args []string) int {
 		config.SubscriptionID = DefaultSubscriptionID
 	}
 
-	if username != "" {
-		config.CF.Username = username
-	} else if config.CF.Username == "" {
-		config.CF.Username = DefaultUsername
-	}
-
-	if password != "" {
-		config.CF.Password = password
-	}
-
-	if config.CF.IdleTimeout == 0 {
-		config.CF.IdleTimeout = int(DefaultIdleTimeout.Seconds())
-	}
-
 	// Create cert files for kafka
 	if config.Kafka.Secure {
 		createCertificateFiles(config, logger)
@@ -204,32 +187,6 @@ func (cli *CLI) Run(args []string) int {
 		go Server.Start()
 	}
 
-	// Setup option struct for nozzle consumer.
-	nozzleConfig := &nozzle.Config{
-		DopplerAddr:    config.CF.DopplerAddr,
-		Token:          config.CF.Token,
-		UaaAddr:        config.CF.UAAAddr,
-		Username:       config.CF.Username,
-		Password:       config.CF.Password,
-		IdleTimeout:    time.Duration(config.CF.IdleTimeout) * time.Second,
-		SubscriptionID: config.SubscriptionID,
-		Insecure:       config.InsecureSSLSkipVerify,
-		Logger:         logger,
-	}
-
-	// Setup default nozzle consumer.
-	nozzleConsumer, err := nozzle.NewConsumer(nozzleConfig)
-	if err != nil {
-		logger.Printf("[ERROR] Failed to construct nozzle consumer: %s", err)
-		return ExitCodeError
-	}
-
-	err = nozzleConsumer.Start()
-	if err != nil {
-		logger.Printf("[ERROR] Failed to start nozzle consumer: %s", err)
-		return ExitCodeError
-	}
-
 	if config.Kafka.Brokers != nil {
 
 		for i := range config.Kafka.Brokers {
@@ -239,25 +196,6 @@ func (cli *CLI) Run(args []string) int {
 		}
 
 		logger.Printf("[INFO] Kafka Brokers %v", config.Kafka.Brokers)
-	}
-
-	if config.GoRedisClient.Addrs != nil {
-
-		for i := range config.GoRedisClient.Addrs {
-			config.GoRedisClient.Addrs[i] = strings.Trim(config.GoRedisClient.Addrs[i], "\"[]")
-			config.GoRedisClient.Addrs[i] += ":"
-			config.GoRedisClient.Addrs[i] += config.GoRedisClient.Port
-		}
-
-		logger.Printf("[INFO] Redis Cluster %v", config.GoRedisClient.Addrs)
-		logger.Printf("[INFO] Redis DB %d", config.GoRedisClient.DB)
-	}
-
-	//Setup kafka consumer
-	consumer, err := kafka.NewKafkaConsumer(config)
-	if err != nil {
-		logger.Printf("[ERROR] Failed to construct kafka consumer: %s", err)
-		return ExitCodeError
 	}
 
 	// Setup nozzle producer
@@ -317,49 +255,6 @@ func (cli *CLI) Run(args []string) int {
 		}
 	}()
 
-	// Handle nozzle consumer error and slow consumer alerts
-	go func() {
-		for {
-			select {
-			// The following comments are from noaa client comments.
-			//
-			// "Whenever an error is encountered, the error will be sent down the error
-			// channel and Firehose will attempt to reconnect up to 5 times.  After five
-			// failed reconnection attempts, Firehose will give up and close the error and
-			// Envelope channels."
-			//
-			// When noaa client gives up recconection to doppler, nozzle should be
-			// terminated instead of infinity loop. We deploy nozzle on CF as CF app.
-			// This means we can ask platform to restart nozzle when terminated.
-			//
-			// In future, we should implement restart/retry fuctionality in nozzle (or go-nozzle)
-			// and avoid to rely on the specific platform (so that we can deploy this anywhere).
-			case err, ok := <-nozzleConsumer.Errors():
-
-				// This means noaa consumer stopped consuming and close its channel.
-				if !ok {
-					logger.Printf("[ERROR] Nozzle consumer's error channel is closed")
-
-					// Call cancellFunc and then stop all nozzle workers
-					cancel()
-
-					// Finish error handline goroutine
-					return
-				}
-
-				// Connection retry is done on noaa side (5 times)
-				// After 5 times but can not be recovered, then channel is closed.
-				logger.Printf("[ERROR] Received error from nozzle consumer: %s", err)
-				stats.Inc(ConsumeFail)
-
-			case err := <-nozzleConsumer.Detects():
-				// TODO(tcnksm): Should know how many logs are dropped.
-				logger.Printf("[ERROR] Detect slowConsumerAlert: %s", err)
-				stats.Inc(SlowConsumerAlert)
-			}
-		}
-	}()
-
 	// Handle producer error
 	// TODO(tcnksm): Buffer and restart when it recovers
 	go func() {
@@ -382,20 +277,8 @@ func (cli *CLI) Run(args []string) int {
 		cancel()
 	}()
 
-	// Create Redis client
-	logger.Printf("[INFO] Start Redis Client for host %v", config.GoRedisClient.Addrs)
-	redisClient.CheckIfCluster(config)
-
-	// Create a cf client
-	cf.NewCfClient(config)
-	logger.Printf("[INFO] Start Cloud Foundry Client for host %s", config.GoCfClient.Api)
-
 	// Start kafka consumer
 	logger.Println("[INFO] Start kafka consumer process")
-
-	go func() {
-		kafka.Consume(ctx, consumer, logger)
-	}()
 
 	// Start multiple produce worker processes.
 	// nozzle consumer events will be distributed to each producer.
@@ -408,7 +291,7 @@ func (cli *CLI) Run(args []string) int {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			producer.Produce(ctx, nozzleConsumer.Events())
+			producer.Produce(ctx)
 		}()
 	}
 
@@ -418,13 +301,6 @@ func (cli *CLI) Run(args []string) int {
 	// Attempt to close all the things. Not returns soon even if
 	// error is happend while closing.
 	isError := false
-
-	// Close nozzle consumer
-	logger.Printf("[INFO] Closing nozzle cosumer")
-	if err := nozzleConsumer.Close(); err != nil {
-		logger.Printf("[ERROR] Failed to close nozzle consumer process: %s", err)
-		isError = true
-	}
 
 	logger.Printf("[INFO] Closing producer")
 	producer.Close()

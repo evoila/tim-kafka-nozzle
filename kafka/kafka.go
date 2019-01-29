@@ -2,23 +2,19 @@ package kafka
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
-	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cloudfoundry/sonde-go/events"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/autoscaler"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/cf"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/config"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/redisClient"
-	"github.com/evoila/osb-autoscaler-kafka-nozzle/stats"
+	"github.com/evoila/tim-kafka-nozzle/config"
+	"github.com/evoila/tim-kafka-nozzle/stats"
 	"golang.org/x/net/context"
 )
 
@@ -42,48 +38,6 @@ const (
 	DefaultChannelBufferSize  = 512
 	DefaultSubInputBufferSize = 1024
 )
-
-func NewKafkaConsumer(config *config.Config) (*kafka.Consumer, error) {
-	brokers := config.Kafka.Brokers
-	if len(brokers) < 1 {
-		return nil, fmt.Errorf("brokers are not provided")
-	}
-
-	topics := []string{config.Kafka.Topic.BindingsTopic}
-
-	consumerConfig := kafka.ConfigMap{
-		"bootstrap.servers":           strings.Join(brokers, ", "),
-		"group.id":                    "bindings-consumer",
-		"auto.offset.reset":           "earliest",
-		"retry.backoff.ms":            DefaultKafkaRetryBackoff,
-		"socket.receive.buffer.bytes": DefaultChannelBufferSize,
-	}
-
-	if config.Kafka.Secure {
-		consumerConfig.SetKey("security.protocol", "sasl_ssl")
-		consumerConfig.SetKey("sasl.mechanism", "SCRAM-SHA-256")
-		consumerConfig.SetKey("sasl.username", config.Kafka.SaslUsername)
-		consumerConfig.SetKey("sasl.password", config.Kafka.SaslPassword)
-		consumerConfig.SetKey("ssl.ca.location", os.TempDir()+"/server.cer.pem")
-		consumerConfig.SetKey("ssl.certificate.location", os.TempDir()+"/client.cer.pem")
-		consumerConfig.SetKey("ssl.key.location", os.TempDir()+"/client.key.pem")
-	}
-
-	if config.Kafka.RetryBackoff != 0 {
-		backoff := time.Duration(config.Kafka.RetryBackoff) * time.Millisecond
-		consumerConfig.SetKey("retry.backoff.ms", backoff)
-	}
-
-	consumer, err := kafka.NewConsumer(&consumerConfig)
-
-	if err != nil {
-		log.Println(err)
-		return nil, fmt.Errorf("failed to create kafka consumer")
-	} else {
-		consumer.SubscribeTopics(topics, nil)
-		return consumer, nil
-	}
-}
 
 func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Config) (NozzleProducer, error) {
 	brokers := config.Kafka.Brokers
@@ -128,16 +82,12 @@ func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Con
 	}
 
 	return &KafkaProducer{
-		Producer:                       producer,
-		Logger:                         logger,
-		Stats:                          stats,
-		logMessageTopic:                config.Kafka.Topic.LogMessage,
-		autoscalerContainerMetricTopic: config.Kafka.Topic.AutoscalerContainerMetric,
-		logMetricContainerMetricTopic:  config.Kafka.Topic.LogMetricContainerMetric,
-		httpMetricTopic:                config.Kafka.Topic.HttpMetric,
-		repartitionMax:                 repartitionMax,
-		errors:                         make(chan *kafka.Error),
-		deliveryChan:                   make(chan kafka.Event),
+		Producer:       producer,
+		Logger:         logger,
+		Stats:          stats,
+		repartitionMax: repartitionMax,
+		errors:         make(chan *kafka.Error),
+		deliveryChan:   make(chan kafka.Event),
 	}, nil
 }
 
@@ -184,83 +134,8 @@ func (kp *KafkaProducer) Successes() <-chan *kafka.Message {
 	return msgCh
 }
 
-func Consume(ctx context.Context, consumer *kafka.Consumer, logger *log.Logger) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-
-	for {
-		event := consumer.Poll(100)
-		if event == nil {
-			continue
-		}
-
-		switch e := event.(type) {
-		case *kafka.Message:
-			DecodeMessage(e.Value, logger)
-		case kafka.Error:
-			// Errors should generally be considered as informational, the client will try to automatically recover
-			fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
-		}
-	}
-}
-
-func DecodeMessage(consumerMessage []byte, logger *log.Logger) {
-	if consumerMessage != nil {
-		var data map[string]string
-		json.Unmarshal(consumerMessage, &data)
-
-		logger.Printf("[INFO] Received binding for application with id = %s, collection data...", data["appId"])
-
-		if data["appId"] != "" {
-			if data["action"] == "bind" || data["action"] == "load" {
-				Bind(data)
-			} else if data["action"] == "unbind" {
-				Unbind(data)
-			} else {
-				logger.Printf("[ERROR] Unknown action in a binding message for id = %s : %s", data["appId"], data["action"])
-			}
-		}
-	}
-}
-
-func Bind(data map[string]string) {
-	redisEntry := getAppEnvironmentAsJson(data["appId"])
-
-	if redisEntry["subscribed"] == true {
-		UpdateBinding(data, redisEntry)
-	} else {
-		environmentAsJson := cf.CreateEnvironmentJson(data["appId"], data["source"])
-		redisClient.Set(data["appId"], environmentAsJson, 0)
-	}
-}
-
-func Unbind(data map[string]string) {
-	redisEntry := getAppEnvironmentAsJson(data["appId"])
-
-	if redisEntry["logMetric"] == true && redisEntry["autoscaler"] == true {
-		UpdateBinding(data, redisEntry)
-	} else {
-		redisClient.Delete(data["appId"])
-	}
-}
-
-func UpdateBinding(data map[string]string, redisEntry map[string]interface{}) {
-	if data["action"] == "bind" || data["action"] == "load" {
-		redisEntry[data["source"]] = true
-	} else {
-		redisEntry[data["source"]] = false
-	}
-
-	tmp, err := json.Marshal(redisEntry)
-
-	if err == nil {
-		environmentAsJson := string(tmp)
-		redisClient.Set(data["appId"], environmentAsJson, 0)
-	}
-}
-
 // Produce produces event to kafka
-func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Envelope) {
+func (kp *KafkaProducer) Produce(ctx context.Context) {
 	kp.once.Do(kp.init)
 
 	kp.Logger.Printf("[INFO] Start to sub input")
@@ -274,129 +149,80 @@ func (kp *KafkaProducer) Produce(ctx context.Context, eventCh <-chan *events.Env
 			kp.Logger.Printf("[INFO] Stop kafka producer")
 			return
 
-		case event, ok := <-eventCh:
-			if !ok {
-				kp.Logger.Printf("[ERROR] Nozzle consumer eventCh is closed")
-				return
+		default:
+			client := &http.Client{}
+			request, _ := http.NewRequest("GET", "https://kanw92:9090/nwrestapi/v3/global/serverconfig", nil)
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Authorization", "Basic cmVzdHVzZXI6Z0RDczBmdHMyMDE1IQ==")
+			response, err := client.Do(request)
+
+			if err != nil {
+				log.Printf("[ERROR] Failed REST call")
+
+				data := `{
+					"acceptNewRecoverSessions": true,
+					"acceptNewSessions": true,
+					"aclPassthrough": true,
+					"administrators": [
+					  "user=root,host=kanw92.beast.local",
+					  "user=administrator,host=kanw92.beast.local",
+					  "user=system,host=kanw92.beast.local",
+					  "user=administrator,host=kamgmt",
+					  "user=administrator,host=kamgmt.beast.local",
+					  "*@*"
+					],
+					"authenticationProxyPort": 7999,
+					"authenticationServiceDatabase": "/nsr/authc/data",
+					"authenticationServicePort": 9090,
+					"clpRefresh": "No",
+					"clpUom": "1",
+					"deviceSharingMode": "MaximalSharing",
+					"disableRpsClone": true,
+					"jobInactivityTimeout": 0,
+					"jobsdbRetentionInHours": 72,
+					"keepIncompleteBackups": false,
+					"manualSaves": true,
+					"name": "kanw92.beast.local",
+					"nasDevicePolicyAllowed": true,
+					"parallelism": 32,
+					"publicArchives": false,
+					"resourceId": {
+					  "id": "3.0.241.60.0.0.0.0.205.38.207.90.172.16.174.95",
+					  "sequence": 22
+					},
+					"saveSessionDistribution": "MaxSessions",
+					"serverOSType": "Linux",
+					"vmwarePolicyAllowed": true,
+					"vmwsEnable": true,
+					"vmwsPort": 8080,
+					"vmwsUserName": "VMUser",
+					"vmwsUserPassword": "*******",
+					"volumePriority": "NearLinePriority",
+					"wormPoolsOnlyHoldWormTapes": true,
+					"wormTapesOnlyInWormPools": true
+				  }`
+
+				kp.input([]byte(data), "server_config")
+			} else {
+				fmt.Println(response.Status)
+				data, err := ioutil.ReadAll(response.Body)
+				kp.input(data, "server_config")
+				fmt.Println(err)
 			}
 
-			kp.input(event)
+			time.Sleep(10 * 1000 * time.Millisecond)
 		}
 	}
 }
 
-func (kp *KafkaProducer) input(event *events.Envelope) {
-	switch event.GetEventType() {
-	case events.Envelope_HttpStart:
-		// Do nothing
-	case events.Envelope_HttpStartStop:
-		if event.GetHttpStartStop().GetApplicationId() != nil && event.GetHttpStartStop().GetPeerType() == 1 &&
-			checkIfPublishIsPossible(uuidToString(event.GetHttpStartStop().GetApplicationId())) {
+func (kp *KafkaProducer) input(data []byte, topicName string) {
 
-			latency := event.GetHttpStartStop().GetStopTimestamp() - event.GetHttpStartStop().GetStartTimestamp()
+	kp.Producer.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topicName, Partition: kafka.PartitionAny},
+		Value:          data,
+	}, kp.deliveryChan)
 
-			httpMetric := &autoscaler.HttpMetric{
-				Timestamp:   event.GetTimestamp() / 1000 / 1000, //convert to ms
-				MetricName:  "HttpMetric",
-				AppId:       uuidToString(event.GetHttpStartStop().GetApplicationId()),
-				Requests:    1,
-				Latency:     int32(latency) / 1000 / 1000, //convert to ms
-				Description: "Statuscode: " + strconv.Itoa(int(event.GetHttpStartStop().GetStatusCode())),
-			}
-
-			jsonHttpMetric, err := json.Marshal(httpMetric)
-
-			if err == nil {
-				kp.Producer.Produce(&kafka.Message{
-					TopicPartition: kafka.TopicPartition{Topic: &kp.httpMetricTopic, Partition: kafka.PartitionAny},
-					Value:          jsonHttpMetric,
-				}, kp.deliveryChan)
-				kp.Stats.Inc(stats.Consume)
-			}
-		}
-	case events.Envelope_HttpStop:
-		// Do nothing
-	case events.Envelope_LogMessage:
-		var appId string = event.GetLogMessage().GetAppId()
-		if appId != "" {
-			redisEntry := getAppEnvironmentAsJson(appId)
-			if checkIfPublishIsPossible(appId) && checkIfSourceTypeIsValid(event.GetLogMessage().GetSourceType()) {
-				logMessage := &autoscaler.LogMessage{
-					Timestamp:        event.GetLogMessage().GetTimestamp() / 1000 / 1000,
-					LogMessage:       string(event.GetLogMessage().GetMessage()[:]),
-					LogMessageType:   event.GetLogMessage().GetMessageType().String(),
-					SourceType:       event.GetLogMessage().GetSourceType(),
-					AppId:            event.GetLogMessage().GetAppId(),
-					AppName:          redisEntry["applicationName"].(string),
-					Space:            redisEntry["space"].(string),
-					Organization:     redisEntry["organization"].(string),
-					OrganizationGuid: redisEntry["organization_guid"].(string),
-					SourceInstance:   event.GetLogMessage().GetSourceInstance(),
-				}
-
-				jsonLogMessage, err := json.Marshal(logMessage)
-
-				if err == nil {
-					kp.Producer.Produce(&kafka.Message{
-						TopicPartition: kafka.TopicPartition{Topic: &kp.logMessageTopic, Partition: kafka.PartitionAny},
-						Value:          jsonLogMessage,
-					}, kp.deliveryChan)
-					kp.Stats.Inc(stats.Consume)
-				}
-			}
-		}
-
-	case events.Envelope_ValueMetric:
-		/*kp.Input() <- &sarama.ProducerMessage{
-			Topic:    kp.ValueMetricTopic(),
-			Value:    &JsonEncoder{event: event},
-			Metadata: metadata{retries: 0},
-		}*/
-	case events.Envelope_CounterEvent:
-		// Do nothing
-	case events.Envelope_Error:
-		// Do nothing
-	case events.Envelope_ContainerMetric:
-		var appId string = event.GetContainerMetric().GetApplicationId()
-		if appId != "" {
-
-			redisEntry := getAppEnvironmentAsJson(appId)
-			if checkIfPublishIsPossibleWithoutRequest(appId, redisEntry) {
-
-				containerMetric := &autoscaler.ContainerMetric{
-					Timestamp:        event.GetTimestamp() / 1000 / 1000, //convert to ms
-					MetricName:       "InstanceContainerMetric",
-					AppId:            appId,
-					AppName:          redisEntry["applicationName"].(string),
-					Space:            redisEntry["space"].(string),
-					OrganizationGuid: redisEntry["organization_guid"].(string),
-					Cpu:              int32(event.GetContainerMetric().GetCpuPercentage()), //* 100),
-					Ram:              int64(event.GetContainerMetric().GetMemoryBytes()),
-					InstanceIndex:    event.GetContainerMetric().GetInstanceIndex(),
-					Description:      "",
-				}
-
-				jsonContainerMetric, err := json.Marshal(containerMetric)
-
-				if err == nil {
-					if checkIfAutoscalerIsBound(appId, redisEntry) {
-						kp.Producer.Produce(&kafka.Message{
-							TopicPartition: kafka.TopicPartition{Topic: &kp.autoscalerContainerMetricTopic, Partition: kafka.PartitionAny},
-							Value:          jsonContainerMetric,
-						}, kp.deliveryChan)
-					}
-
-					if checkIfLogMetricIsBound(appId, redisEntry) {
-						kp.Producer.Produce(&kafka.Message{
-							TopicPartition: kafka.TopicPartition{Topic: &kp.logMetricContainerMetricTopic, Partition: kafka.PartitionAny},
-							Value:          jsonContainerMetric,
-						}, kp.deliveryChan)
-					}
-					kp.Stats.Inc(stats.Consume)
-				}
-			}
-		}
-	}
+	kp.Stats.Inc(stats.Consume)
 }
 
 func (kp *KafkaProducer) ReadDeliveryChan() {
@@ -407,44 +233,6 @@ func (kp *KafkaProducer) ReadDeliveryChan() {
 		<-kp.deliveryChan
 		kp.Stats.Inc(stats.Publish)
 	}
-}
-
-func getAppEnvironmentAsJson(appId string) map[string]interface{} {
-	var data map[string]interface{}
-	json.Unmarshal([]byte(redisClient.Get(appId)), &data)
-	return data
-}
-
-// This function creates a request to redis
-func checkIfPublishIsPossible(appId string) bool {
-	if redisClient.Get(appId) == "" {
-		redisClient.Set(appId, "{\"subscribed\":false}", 0)
-		return false
-	}
-
-	return getAppEnvironmentAsJson(appId)["subscribed"].(bool)
-}
-
-// This function does NOT creates a request to redis when appId is not empty, but works with the given map
-// Use the getAppEnvironmentAsJson(appId) function to get the corresponding map
-func checkIfPublishIsPossibleWithoutRequest(appId string, redisEntry map[string]interface{}) bool {
-	if redisClient.Get(appId) == "" {
-		redisClient.Set(appId, "{\"subscribed\":false}", 0)
-		return false
-	}
-	return redisEntry["subscribed"].(bool)
-}
-
-func checkIfAutoscalerIsBound(appId string, redisEntry map[string]interface{}) bool {
-	return redisClient.Get(appId) != "" && redisEntry["autoscaler"].(bool)
-}
-
-func checkIfLogMetricIsBound(appId string, redisEntry map[string]interface{}) bool {
-	return redisClient.Get(appId) != "" && redisEntry["logMetric"].(bool)
-}
-
-func checkIfSourceTypeIsValid(sourceType string) bool {
-	return sourceType == "RTR" || sourceType == "STG" || sourceType == "APP/PROC/WEB"
 }
 
 func uuidToString(uuid *events.UUID) string {

@@ -8,41 +8,7 @@ import (
 type Config struct {
 	SubscriptionID        string `env:"SUBSCRIPTION_ID"`
 	InsecureSSLSkipVerify bool   `env:"INSECURE_SSL_SKIP_VERIFY"`
-	CF                    CF
 	Kafka                 Kafka
-	GoRedisClient         GoRedisClient
-	GoCfClient            GoCfClient
-}
-
-// CF holds CloudFoundry related configuration.
-type CF struct {
-	// dopplerAddr is doppler firehose address.
-	// It must start with `ws://` or `wss://` schema because this is websocket.
-	DopplerAddr string `env:"CF_DOPPLER_ADDRESS"`
-
-	// UAAAddr is UAA server address.
-	UAAAddr string `env:"CF_UAA_ADDRESS"`
-
-	// Username is the username which can has scope of `doppler.firehose`.
-	Username string `env:"CF_USERNAME"`
-	Password string `env:"CF_PASSWORD"`
-	Token    string `env:"CF_TOKEN"`
-
-	// Firehose configuration
-	IdleTimeout int `env:"CF_FIREHOSE_IDLE_TIMEOUT"` // seconds
-}
-
-type GoRedisClient struct {
-	Addrs    []string `env:"REDIS_HOSTS"`
-	Port     string   `env:"REDIS_PORT"`
-	Password string   `env:"REDIS_PASSWORD"`
-	DB       int      `env:"REDIS_DB"`
-}
-
-type GoCfClient struct {
-	Api      string `env:"GO_CF_API"`
-	Username string `env:"GO_CF_USERNAME"`
-	Password string `env:"GO_CF_PASSWORD"`
 }
 
 // Kafka holds Kafka related configuration
@@ -65,24 +31,11 @@ type Kafka struct {
 }
 
 type Topic struct {
-	BindingsTopic             string `env:"KAFKA_BINDINGS_TOPIC"`
-	LogMessage                string `env:"KAFKA_TOPIC_LOG_MESSAGE"`
-	AutoscalerContainerMetric string `env:"KAFKA_TOPIC_AUTOSCALER_CONTAINER_METRIC"`
-	LogMetricContainerMetric  string `env:"KAFKA_TOPIC_LOG_METRIC_CONTAINER_METRIC"`
-	HttpMetric                string `env:"KAFKA_TOPIC_HTTP_METRIC"`
+	// Create me
 }
 
 // LoadConfig reads configuration file
 func LoadConfig(path string) (*Config, error) {
-
-	cf := CF{}
-	env.Parse(&cf)
-
-	goredisclient := GoRedisClient{}
-	env.Parse(&goredisclient)
-
-	gocfclient := GoCfClient{}
-	env.Parse(&gocfclient)
 
 	topic := Topic{}
 	env.Parse(&topic)
@@ -93,10 +46,7 @@ func LoadConfig(path string) (*Config, error) {
 	env.Parse(&kafka)
 
 	config := Config{
-		CF:            cf,
-		Kafka:         kafka,
-		GoRedisClient: goredisclient,
-		GoCfClient:    gocfclient,
+		Kafka: kafka,
 	}
 
 	env.Parse(&config)
