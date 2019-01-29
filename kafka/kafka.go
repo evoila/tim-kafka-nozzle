@@ -164,7 +164,7 @@ func (kp *KafkaProducer) Produce(ctx context.Context) {
 				log.Printf("[ERROR] Failed REST call")
 				log.Println(err)
 			} else {
-				data, err := ioutil.ReadAll(response.Body)
+				data, _ := ioutil.ReadAll(response.Body)
 				kp.input(data, "server_config")
 			}
 
