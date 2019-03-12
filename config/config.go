@@ -1,55 +1,61 @@
 package config
 
 import (
-	"github.com/caarlos0/env"
+	"io/ioutil"
+	"log"
+
+	"gopkg.in/yaml.v2"
 )
 
 // Config is kafka-firehose-nozzle configuration.
 type Config struct {
-	SubscriptionID        string `env:"SUBSCRIPTION_ID"`
-	InsecureSSLSkipVerify bool   `env:"INSECURE_SSL_SKIP_VERIFY"`
+	SubscriptionID        string `yaml:"subscription_id"`
+	InsecureSSLSkipVerify bool   `yaml:"insecure_ssl_skip_verify"`
 	Kafka                 Kafka
 }
 
+//https://vds-ev.de/gegenwartsdeutsch/gendersprache/gendersprache-unterschriften/unterschriften/
 // Kafka holds Kafka related configuration
 type Kafka struct {
-	Brokers []string `env:"KAFKA_HOSTS"`
-	Port    string   `env:"KAFKA_PORT"`
-	Topic   Topic
+	Brokers []string `yaml:"hosts"`
+	Port    string   `yaml:"port"`
 
-	RetryMax       int `env:"KAFKA_RETRY_MAX"`
-	RetryBackoff   int `env:"KAFKA_RETRY_BACKOFF_MS"`
-	RepartitionMax int `env:"KAFKA_REPARTITION_MAX"`
+	RetryMax       int `yaml:"retry_max"`
+	RetryBackoff   int `yaml:"retry_backoff_ms"`
+	RepartitionMax int `yaml:"repartition_max"`
 
-	Secure       bool   `env:"KAFKA_SECURE"`
-	SaslUsername string `env:"KAFKA_SASL_USERNAME"`
-	SaslPassword string `env:"KAFKA_SASL_PASSWORD"`
+	Secure bool `yaml:"secure"`
 
-	SslCa          string `env:"KAFKA_SSL_CA"`
-	SslCertificate string `env:"KAFKA_SSL_CERTIFICATE"`
-	SslKey         string `env:"KAFKA_SSL_KEY"`
+	Sasl Sasl
+
+	Ssl Ssl
+
+	Filename string
 }
 
-type Topic struct {
-	// Create me
+type Sasl struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
+type Ssl struct {
+	Ca string `yaml:"ca"`
 }
 
 // LoadConfig reads configuration file
 func LoadConfig(path string) (*Config, error) {
+	config := Config{}
 
-	topic := Topic{}
-	env.Parse(&topic)
-
-	kafka := Kafka{
-		Topic: topic,
-	}
-	env.Parse(&kafka)
-
-	config := Config{
-		Kafka: kafka,
+	data, err := ioutil.ReadFile("configuration.yml")
+	if err != nil {
+		return nil, err
 	}
 
-	env.Parse(&config)
+	err = yaml.Unmarshal([]byte(data), &config)
+	if err != nil {
+		log.Fatalf("[ERROR]: %v", err)
+		return nil, err
+	}
 
 	return &config, nil
 }

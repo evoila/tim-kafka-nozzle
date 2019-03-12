@@ -3,14 +3,11 @@ package kafka
 import (
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
-	"crypto/tls"
 
 	"github.com/cloudfoundry/sonde-go/events"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -56,11 +53,9 @@ func NewKafkaProducer(logger *log.Logger, stats *stats.Stats, config *config.Con
 	if config.Kafka.Secure {
 		producerConfig.SetKey("security.protocol", "sasl_ssl")
 		producerConfig.SetKey("sasl.mechanism", "SCRAM-SHA-256")
-		producerConfig.SetKey("sasl.username", config.Kafka.SaslUsername)
-		producerConfig.SetKey("sasl.password", config.Kafka.SaslPassword)
-		producerConfig.SetKey("ssl.ca.location", os.TempDir()+"/server.cer.pem")
-		producerConfig.SetKey("ssl.certificate.location", os.TempDir()+"/client.cer.pem")
-		producerConfig.SetKey("ssl.key.location", os.TempDir()+"/client.key.pem")
+		producerConfig.SetKey("sasl.username", config.Kafka.Sasl.Username)
+		producerConfig.SetKey("sasl.password", config.Kafka.Sasl.Password)
+		producerConfig.SetKey("ssl.ca.location", os.TempDir()+config.Kafka.Filename)
 	}
 
 	if config.Kafka.RetryMax != 0 {
@@ -98,11 +93,6 @@ type KafkaProducer struct {
 
 	repartitionMax int
 	errors         chan *kafka.Error
-
-	logMessageTopic                string
-	autoscalerContainerMetricTopic string
-	logMetricContainerMetricTopic  string
-	httpMetricTopic                string
 
 	Logger *log.Logger
 	Stats  *stats.Stats
@@ -149,12 +139,12 @@ func (kp *KafkaProducer) Produce(ctx context.Context) {
 			// Stop process immediately
 			kp.Logger.Printf("[INFO] Stop kafka producer")
 			return
-
 		default:
-			tr := &http.Transport{
+			/*tr := &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
 			client := &http.Client{Transport: tr}
+
 			request, _ := http.NewRequest("GET", "https://kanw92.beast.local:9090/nwrestapi/v3/global/serverconfig", nil)
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Authorization", "Basic cmVzdHVzZXI6Z0RDczBmdHMyMDE1IQ==")
@@ -168,7 +158,7 @@ func (kp *KafkaProducer) Produce(ctx context.Context) {
 				kp.input(data, "server_config")
 			}
 
-			time.Sleep(10 * 1000 * time.Millisecond)
+			time.Sleep(10 * 1000 * time.Millisecond)*/
 		}
 	}
 }

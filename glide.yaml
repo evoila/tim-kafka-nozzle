@@ -25,12 +25,6 @@ import:
   version: v1.0.2
 - package: github.com/fukata/golang-stats-api-handler
   version: ab9f90f16caab828afda479fd34bfbbbba2efcee
-- package: github.com/gogo/protobuf
-  version: 74b6e9deaff6ba6da1389ec97351d337f0d08b06
-  subpackages:
-  - gogoproto
-  - proto
-  - protoc-gen-gogo/descriptor
 - package: github.com/golang/snappy
   version: 5f1c01d9f64b941dd9582c638279d046eda6ca31
 - package: github.com/gorilla/websocket
@@ -45,8 +39,7 @@ import:
   version: fb93926129b8ec0056f2f458b1f519654814edf0
   subpackages:
   - context
-- package: github.com/caarlos0/env
-  version: v3.3.0
 - package: github.com/cloudfoundry-community/go-cfclient
+- package: github.com/go-yaml/yaml
 - package: github.com/confluentinc/confluent-kafka-go
   version: v0.11.6

@@ -1,0 +1,16 @@
+subscription_id: <subscription_id>
+insecure_ssl_skip_verify: true
+
+kafka:
+  hosts:
+  - 127.0.0.1
+  port: 9093
+  retry_max: 10
+  retry_backoff_ms: 500
+  secure: true
+  sasl:
+    username: <username>
+    password: <password>
+  ssl:
+    ca: |
+      <ca_cert>
