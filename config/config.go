@@ -14,6 +14,11 @@ type Config struct {
 	Kafka                 Kafka
 }
 
+type Http struct {
+	BaseUrls  []string `yaml:"baseurls"`
+	Endpoints []string `yaml:"endpoints"`
+}
+
 //https://vds-ev.de/gegenwartsdeutsch/gendersprache/gendersprache-unterschriften/unterschriften/
 // Kafka holds Kafka related configuration
 type Kafka struct {
