@@ -15,8 +15,13 @@ type Config struct {
 }
 
 type Http struct {
-	BaseUrls  []string `yaml:"baseurls"`
-	Endpoints []string `yaml:"endpoints"`
+	BaseUrls  []string   `yaml:"baseurls"`
+	Endpoints []Endpoint `yaml:"endpoints"`
+}
+
+type Endpoint struct {
+	endpoint string `yaml:"endpoint"`
+	interval int    `yaml:"interval"`
 }
 
 //https://vds-ev.de/gegenwartsdeutsch/gendersprache/gendersprache-unterschriften/unterschriften/

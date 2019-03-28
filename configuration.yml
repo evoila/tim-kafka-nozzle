@@ -6,8 +6,11 @@ http:
   - http://baseurl1
   - http://baseurl2
   endpoints:
-  - serverconfig
-  - datadomain
+    - endpoint: serverconfig
+      interval: 3600
+    - endpoint: datadomain
+      interval: 60
+
 kafka:
   hosts:
   - 127.0.0.1
